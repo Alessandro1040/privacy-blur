@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Privacy Blur — Sfoca Persone e Volti</title>
+<title>Privacy Blur + OCR → LaTeX → PDF</title>
 <style>
   :root{
     --bg:#0f1115; --card:#181b22; --accent:#4f8cff;
@@ -19,11 +19,11 @@
     padding:32px 16px 64px;
   }
   h1{font-size:1.6rem;margin:0 0 6px;text-align:center}
-  .sub{color:var(--muted);font-size:.95rem;margin-bottom:24px;text-align:center;max-width:640px}
+  .sub{color:var(--muted);font-size:.95rem;margin-bottom:24px;text-align:center;max-width:680px}
   .card{
     background:var(--card);border:1px solid #262b35;border-radius:16px;
-    padding:20px;width:100%;max-width:920px;
-    box-shadow:0 10px 40px rgba(0,0,0,.4);
+    padding:20px;width:100%;max-width:1020px;
+    box-shadow:0 10px 40px rgba(0,0,0,.4);margin-bottom:20px;
   }
   .drop{
     border:2px dashed #333b48;border-radius:12px;padding:36px 16px;
@@ -39,6 +39,9 @@
   .btn:hover{filter:brightness(1.1)}
   .btn:disabled{opacity:.5;cursor:not-allowed}
   .btn.secondary{background:#262b35}
+  .btn.green{background:#2e7d32}
+  .btn.purple{background:#6a1b9a}
+  .btn.orange{background:#c2410c}
   .slider{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:.85rem}
   .slider input{width:110px}
   .status{text-align:center;color:var(--muted);margin-top:14px;font-size:.9rem;min-height:1.2em}
@@ -56,17 +59,63 @@
   }
   @keyframes spin{to{transform:rotate(360deg)}}
   .hint{font-size:.8rem;color:var(--muted);margin-top:6px;text-align:center}
+  textarea{
+    width:100%;min-height:220px;margin-top:12px;border-radius:10px;
+    background:#0d1017;color:#d4e0f0;border:1px solid #2a3140;
+    font-family:ui-monospace,"Cascadia Code","Fira Code",monospace;
+    font-size:.85rem;padding:14px;resize:vertical;line-height:1.5;
+  }
+  .tabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+  .tab{
+    padding:8px 16px;border-radius:8px;border:1px solid #2a3140;
+    background:#1c212b;color:var(--muted);cursor:pointer;font-size:.85rem;font-weight:600;
+  }
+  .tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .tab-content{display:none}
+  .tab-content.active{display:block}
+  .badge{
+    display:inline-block;background:#2a3140;color:var(--muted);
+    border-radius:6px;padding:3px 10px;font-size:.78rem;margin-left:8px;
+  }
+  #pdfPreview{
+    width:100%;height:600px;border:1px solid #2a3140;border-radius:10px;
+    margin-top:12px;background:#fff;
+  }
+  .pdf-actions{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;justify-content:center}
+  /* Avviso quando la pagina è aperta da file:// : PaddleOCR ha bisogno di HTTP */
+  .alert{
+    background:#3a1d0c;border:1px solid #c2410c;color:#fed7aa;
+    border-radius:10px;padding:14px 16px;margin-bottom:16px;font-size:.9rem;
+    line-height:1.55;width:100%;max-width:1020px;
+  }
+  .alert code{background:#1a0e06;padding:2px 6px;border-radius:4px;font-family:ui-monospace,monospace;color:#fdba74}
+  .alert strong{color:#fdba74}
 </style>
 </head>
 <body>
 
-<h1>🔒 Privacy Blur</h1>
+<h1>🔒 Privacy Blur + OCR → LaTeX → PDF</h1>
 <p class="sub">
-  Carica una foto: ogni persona (anche di spalle) e ogni testa/capelli verranno sfocati.
-  Tutto avviene <strong>nel tuo browser</strong>, nessun file viene caricato online.
+  Sfoca persone e volti. Estrai testo e formule con IA dedicata.
+  Compila il PDF con StellarLatex. Tutto <strong>nel browser</strong>.
 </p>
 
+<!-- AVVISO file:// (nascosto se la pagina è servita via HTTP) -->
+<div class="alert" id="fileProtocolWarning" style="display:none">
+  <strong>⚠️ Stai aprendo il file con doppio clic (protocollo <code>file://</code>).</strong><br>
+  L'OCR avanzato (PaddleOCR) richiede un server HTTP per scaricare i modelli.
+  Per usarlo, avvia un mini-server nella cartella del file:<br><br>
+  <code>python3 -m http.server 8000</code><br><br>
+  Poi apri <code>http://localhost:8000/index.html</code>.<br><br>
+  <strong>Nel frattempo</strong> l'app usa <strong>Tesseract.js</strong> (OCR classico,
+  funziona anche da <code>file://</code>). La <em>sfocatura</em> e la
+  <em>compilazione PDF</em> funzionano normalmente.
+</div>
+
+<!-- ========== SEZIONE 1: BLUR ========== -->
 <div class="card">
+  <h2 style="margin:0 0 14px;font-size:1.1rem">1. Sfocatura persone e volti</h2>
+
   <label class="drop" id="drop">
     <input type="file" id="fileInput" accept="image/*">
     <div style="font-size:2rem;margin-bottom:8px">📷</div>
@@ -75,9 +124,9 @@
 
   <div class="row">
     <button class="btn" id="processBtn" disabled>Elabora e sfoca</button>
-    <button class="btn secondary" id="downloadBtn" disabled>Scarica risultato</button>
+    <button class="btn secondary" id="downloadBtn" disabled>Scarica immagine</button>
     <button class="btn secondary" id="resetBtn" disabled>Reset</button>
-    <div class="slider" title="Espansione della maschera attorno a persone e teste">
+    <div class="slider" title="Espansione della maschera">
       <label for="expand">Espansione</label>
       <input type="range" id="expand" min="0" max="40" value="18" step="1">
       <span id="expandVal">18px</span>
@@ -96,45 +145,191 @@
       <figcaption>Risultato (persone + teste sfocate)</figcaption>
     </figure>
   </div>
-
   <div class="hint">Copertura: intera sagoma persona + espansione per capelli e contorno testa.</div>
 </div>
 
-<!-- TensorFlow.js PRIMA delle librerie modelli -->
+<!-- ========== SEZIONE 2: OCR → LaTeX → PDF ========== -->
+<div class="card">
+  <h2 style="margin:0 0 14px;font-size:1.1rem">2. OCR → LaTeX → PDF</h2>
+
+  <div class="row" style="margin-top:0">
+    <button class="btn green" id="ocrBtn" disabled>Estrai testo &amp; formule</button>
+    <button class="btn orange" id="compileBtn" disabled>Compila PDF</button>
+    <button class="btn purple" id="copyLatexBtn" disabled>Copia LaTeX</button>
+    <button class="btn secondary" id="downloadTexBtn" disabled>Scarica .tex</button>
+    <button class="btn secondary" id="downloadPdfBtn" disabled>Scarica .pdf</button>
+  </div>
+
+  <div class="status" id="ocrStatus"></div>
+
+  <div class="tabs" style="margin-top:14px">
+    <button class="tab active" data-tab="latex">LaTeX completo</button>
+    <button class="tab" data-tab="text">Testo grezzo <span class="badge" id="textCount">0 righe</span></button>
+    <button class="tab" data-tab="formulas">Formule <span class="badge" id="formulaCount">0</span></button>
+    <button class="tab" data-tab="pdf">PDF compilato</button>
+  </div>
+
+  <div class="tab-content active" id="tab-latex">
+    <textarea id="latexOutput" placeholder="Il documento LaTeX apparirà qui…" readonly></textarea>
+  </div>
+  <div class="tab-content" id="tab-text">
+    <textarea id="textOutput" placeholder="Testo riconosciuto…" readonly></textarea>
+  </div>
+  <div class="tab-content" id="tab-formulas">
+    <textarea id="formulasOutput" placeholder="Formule LaTeX estratte…" readonly></textarea>
+  </div>
+  <div class="tab-content" id="tab-pdf">
+    <iframe id="pdfPreview" title="Anteprima PDF"></iframe>
+    <div class="pdf-actions">
+      <button class="btn secondary" id="downloadPdfBtn2" disabled>Scarica PDF</button>
+    </div>
+  </div>
+</div>
+
+<!-- TensorFlow.js + modelli per blur -->
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix@2.2.0/dist/body-pix.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-detection@1.0.1/dist/face-detection.min.js"></script>
 
+<!-- Controllo del protocollo: da file:// PaddleOCR non può scaricare i modelli ONNX -->
+<script>
+  window.__isHttp = location.protocol === 'http:' || location.protocol === 'https:';
+  if (!window.__isHttp){
+    const avviso = document.getElementById('fileProtocolWarning');
+    if (avviso) avviso.style.display = 'block';
+    console.warn('Pagina aperta da file://: uso Tesseract.js (l\'OCR avanzato vuole HTTP).');
+  }
+</script>
+
+<!-- Tesseract.js: OCR di riserva, funziona anche da file:// -->
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+<!-- ONNX Runtime + PaddleOCR: SOLO su http(s), così da file:// non si caricano nemmeno -->
+<script>
+  if (window.__isHttp){
+    const ortScript = document.createElement('script');
+    ortScript.src = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.js';
+    ortScript.onload = () => {
+      const mod = document.createElement('script');
+      mod.type = 'module';
+      mod.textContent = `
+        import { PaddleOCR } from 'https://cdn.jsdelivr.net/npm/@paddleocr/paddleocr-js@0.4.2/+esm';
+        window.PaddleOCR = PaddleOCR;
+        window.dispatchEvent(new Event('paddleocr-ready'));
+      `;
+      document.head.appendChild(mod);
+    };
+    ortScript.onerror = () => console.warn('ONNX Runtime non caricato: resto su Tesseract.js.');
+    document.head.appendChild(ortScript);
+  }
+</script>
+
+<!-- Transformers.js per modello formule -->
+<script src="https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0"></script>
+
+<!-- StellarLatex: carica PdfTeXEngine.js dal percorso locale o CDN -->
+<!-- Scarica i file da https://github.com/Arxtect/StellarLatex/releases e mettili in ./stellarlatex/ -->
+<script>
+  // Prova prima il percorso locale, poi il CDN pubblico
+  (function loadStellarLatex(){
+    const localPath = 'stellarlatex/PdfTeXEngine.js';
+    const script = document.createElement('script');
+    script.src = localPath;
+    script.onerror = () => {
+      console.warn('StellarLatex non trovato in ./stellarlatex/, provo CDN…');
+      // Fallback: usa Siglum (più lento ma disponibile via CDN)
+      import('https://cdn.jsdelivr.net/npm/@siglum/engine@0.1.4/+esm')
+        .then(mod => {
+          window.SiglumCompiler = mod.SiglumCompiler;
+          window.dispatchEvent(new Event('pdf-engine-ready'));
+        })
+        .catch(err => {
+          console.error('Nessun compilatore PDF disponibile:', err);
+          window.dispatchEvent(new Event('pdf-engine-failed'));
+        });
+    };
+    script.onload = () => {
+      console.log('StellarLatex caricato.');
+      window.dispatchEvent(new Event('pdf-engine-ready'));
+    };
+    document.head.appendChild(script);
+  })();
+</script>
+
 <script>
 (() => {
-  const drop        = document.getElementById('drop');
-  const fileInput   = document.getElementById('fileInput');
-  const processBtn  = document.getElementById('processBtn');
-  const downloadBtn = document.getElementById('downloadBtn');
-  const resetBtn    = document.getElementById('resetBtn');
-  const statusEl    = document.getElementById('status');
-  const preview     = document.getElementById('preview');
-  const originalImg = document.getElementById('originalImg');
-  const resultCanvas= document.getElementById('resultCanvas');
-  const expandInput = document.getElementById('expand');
-  const expandVal   = document.getElementById('expandVal');
+  const $ = id => document.getElementById(id);
+
+  // --- BLUR ---
+  const drop        = $('drop');
+  const fileInput   = $('fileInput');
+  const processBtn  = $('processBtn');
+  const downloadBtn = $('downloadBtn');
+  const resetBtn    = $('resetBtn');
+  const statusEl    = $('status');
+  const preview     = $('preview');
+  const originalImg = $('originalImg');
+  const resultCanvas= $('resultCanvas');
+  const expandInput = $('expand');
+  const expandVal   = $('expandVal');
+
+  // --- OCR ---
+  const ocrBtn        = $('ocrBtn');
+  const compileBtn    = $('compileBtn');
+  const copyLatexBtn  = $('copyLatexBtn');
+  const downloadTexBtn= $('downloadTexBtn');
+  const downloadPdfBtn= $('downloadPdfBtn');
+  const downloadPdfBtn2 = $('downloadPdfBtn2');
+  const ocrStatus     = $('ocrStatus');
+  const latexOutput   = $('latexOutput');
+  const textOutput    = $('textOutput');
+  const formulasOutput= $('formulasOutput');
+  const textCount     = $('textCount');
+  const formulaCount  = $('formulaCount');
+  const pdfPreview    = $('pdfPreview');
 
   expandInput.addEventListener('input', () => {
     expandVal.textContent = expandInput.value + 'px';
   });
 
+  // Tabs
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      tab.classList.add('active');
+      $('tab-' + tab.dataset.tab).classList.add('active');
+    });
+  });
+
+  // ============================================================
+  // STATO
+  // ============================================================
   let currentImg = null;
   let bodyPixNet = null;
   let faceDetector = null;
   let modelsReady = false;
+  let ocrEngine = null;          // PaddleOCR: solo su http(s), i modelli ONNX non si scaricano da file://
+  let tesseractWorker = null;    // Tesseract.js: SEMPRE caricato, è la rete di sicurezza
+  let formulaPipeline = null;
+  let ocrReady = false;
+  let ocrSource = '';            // da dove arriva il testo riconosciuto (per lo stato)
+
+  let pdfEngine = null;
+  let pdfEngineReady = false;
+  let pdfEngineType = null; // 'stellar' o 'siglum'
+  let currentPdfBlob = null;
 
   const MAX_DIM  = 1280;
   const BLUR_PX  = 24;
   const FEATHER  = 8;
 
   function setStatus(html){ statusEl.innerHTML = html; }
+  function setOcrStatus(html){ ocrStatus.innerHTML = html; }
 
-  // ---------- Caricamento modelli ----------
+  // ============================================================
+  // CARICAMENTO MODELLI BLUR
+  // ============================================================
   async function loadModels(){
     try{
       if (typeof bodyPix === 'undefined') throw new Error('body-pix non caricato.');
@@ -143,7 +338,6 @@
 
       setStatus('<span class="spinner"></span> Caricamento modelli di IA…');
 
-      // BodyPix più accurato (multiplier 1.0 = migliore qualità sul contorno)
       bodyPixNet = await bodyPix.load({
         architecture: 'MobileNetV1',
         outputStride: 16,
@@ -151,7 +345,6 @@
         quantBytes: 2
       });
 
-      // Rilevatore volti BlazeFace (TFJS runtime → nessun conflitto con body-pix)
       faceDetector = await faceDetection.createDetector(
         faceDetection.SupportedModels.MediaPipeFaceDetector,
         { runtime: 'tfjs', maxFaces: 30 }
@@ -159,7 +352,10 @@
 
       modelsReady = true;
       setStatus('✅ Modelli pronti. Carica un\'immagine.');
-      if (currentImg) processBtn.disabled = false;
+      if (currentImg){
+        processBtn.disabled = false;
+        ocrBtn.disabled = !ocrReady;
+      }
     }catch(err){
       console.error(err);
       setStatus('❌ Errore nel caricamento dei modelli: ' + err.message);
@@ -167,7 +363,131 @@
   }
   loadModels();
 
-  // ---------- Upload ----------
+  // ============================================================
+  // CARICAMENTO COMPILATORE PDF
+  // ============================================================
+  window.addEventListener('pdf-engine-ready', () => {
+    if (window.PdfTeXEngine){
+      pdfEngineType = 'stellar';
+      setOcrStatus('<span class="spinner"></span> Inizializzazione compilatore PDF (StellarLatex, ~10 MB)…');
+      try{
+        pdfEngine = new window.PdfTeXEngine();
+        pdfEngine.loadEngine().then(() => {
+          pdfEngineReady = true;
+          console.log('StellarLatex pronto.');
+          updateOcrStatus();
+        }).catch(err => {
+          console.error('StellarLatex init error:', err);
+          updateOcrStatus();
+        });
+      }catch(err){
+        console.error('StellarLatex constructor error:', err);
+        updateOcrStatus();
+      }
+    }else if (window.SiglumCompiler){
+      pdfEngineType = 'siglum';
+      setOcrStatus('<span class="spinner"></span> Inizializzazione compilatore PDF (Siglum, ~45 MB, può richiedere 1-2 minuti)…');
+      try{
+        pdfEngine = new window.SiglumCompiler({
+          bundlesUrl: 'https://cdn.siglum.org/tl2025/bundles',
+          wasmUrl: 'https://cdn.siglum.org/tl2025/busytex.wasm'
+        });
+        pdfEngine.ready().then(() => {
+          pdfEngineReady = true;
+          console.log('Siglum pronto.');
+          updateOcrStatus();
+        }).catch(err => {
+          console.error('Siglum init error:', err);
+          updateOcrStatus();
+        });
+      }catch(err){
+        console.error('Siglum constructor error:', err);
+        updateOcrStatus();
+      }
+    }
+  });
+
+  window.addEventListener('pdf-engine-failed', () => {
+    updateOcrStatus();
+  });
+
+  function updateOcrStatus(){
+    if (!ocrReady && !pdfEngineReady) return;
+    const ocrInfo = ocrReady
+      ? `✅ OCR pronto${ocrSource ? ' (' + ocrSource + ')' : ''}.`
+      : '⏳ OCR in caricamento…';
+    const pdfInfo = pdfEngineReady
+      ? `✅ Compilatore PDF pronto (${pdfEngineType === 'stellar' ? 'StellarLatex' : 'Siglum'}).`
+      : '⏳ Compilatore PDF in caricamento…';
+    setOcrStatus(ocrInfo + ' ' + pdfInfo);
+  }
+
+  // ============================================================
+  // CARICAMENTO OCR — Tesseract.js SEMPRE, PaddleOCR solo su http(s)
+  // ============================================================
+  // Perché due motori: i modelli di PaddleOCR arrivano da CDN con `fetch()`, che
+  // il browser blocca quando la pagina è aperta da file:// (CORS). Tesseract.js
+  // invece funziona anche lì: così da file:// l'app continua a fare OCR (classico)
+  // invece di rompersi, e su http(s) si usa il motore migliore.
+  async function initTesseract(){
+    setOcrStatus('<span class="spinner"></span> Caricamento OCR (Tesseract.js)…');
+    tesseractWorker = await Tesseract.createWorker('ita+eng', 1, {
+      logger: m => {
+        if (m.status === 'recognizing text')
+          setOcrStatus(`<span class="spinner"></span> OCR testo: ${Math.round(m.progress*100)}%`);
+      }
+    });
+  }
+
+  async function initOcr(){
+    try{ await initTesseract(); }
+    catch(err){ console.warn('Tesseract.js non caricato:', err); }
+
+    if (window.__isHttp){
+      try{
+        setOcrStatus('<span class="spinner"></span> Caricamento OCR avanzato (PaddleOCR)…');
+        await new Promise((resolve, reject) => {
+          if (window.PaddleOCR) return resolve();
+          const t = setTimeout(() => reject(new Error('Timeout PaddleOCR')), 30000);
+          window.addEventListener('paddleocr-ready', () => { clearTimeout(t); resolve(); }, {once:true});
+        });
+        ocrEngine = await window.PaddleOCR.create({
+          lang: 'en',
+          ocrVersion: 'PP-OCRv5',
+          ortOptions: { backend: 'wasm' }
+        });
+      }catch(err){
+        console.warn('PaddleOCR non disponibile, resto su Tesseract.js:', err);
+        ocrEngine = null;
+      }
+    }
+
+    // Il modello delle formule è indipendente dall'OCR: si prova comunque
+    try{
+      if (typeof Transformers !== 'undefined'){
+        setOcrStatus('<span class="spinner"></span> Caricamento modello formule (TrOCR-LaTeX)…');
+        const { pipeline } = Transformers;
+        formulaPipeline = await pipeline(
+          'image-to-text',
+          'onnx-community/latex_finetuned-ONNX'
+        );
+      }
+    }catch(err){ console.warn('Modello formule non caricato:', err); }
+
+    ocrReady = !!(ocrEngine || tesseractWorker);
+    ocrSource = ocrEngine ? 'PaddleOCR + Tesseract' : 'Tesseract.js';
+    if (!ocrReady){
+      setOcrStatus('⚠️ OCR non disponibile: i modelli arrivano da CDN, serve la connessione.');
+    }else{
+      updateOcrStatus();
+      if (currentImg) ocrBtn.disabled = false;
+    }
+  }
+  setTimeout(initOcr, 500);
+
+  // ============================================================
+  // UPLOAD / RESET
+  // ============================================================
   drop.addEventListener('click', () => fileInput.click());
   ['dragenter','dragover'].forEach(ev =>
     drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); })
@@ -199,6 +519,14 @@
       processBtn.disabled = !modelsReady;
       downloadBtn.disabled = true;
       resetBtn.disabled = false;
+      ocrBtn.disabled = !ocrReady;
+      copyLatexBtn.disabled = true;
+      downloadTexBtn.disabled = true;
+      compileBtn.disabled = true;
+      downloadPdfBtn.disabled = true;
+      downloadPdfBtn2.disabled = true;
+      currentPdfBlob = null;
+      pdfPreview.src = 'about:blank';
       setStatus(modelsReady
         ? '📸 Immagine caricata. Premi "Elabora e sfoca".'
         : '⏳ Attendo il caricamento dei modelli…');
@@ -207,7 +535,6 @@
     img.src = url;
   }
 
-  // ---------- Reset ----------
   resetBtn.addEventListener('click', () => {
     currentImg = null;
     fileInput.value = '';
@@ -217,21 +544,32 @@
     processBtn.disabled = true;
     downloadBtn.disabled = true;
     resetBtn.disabled = true;
+    ocrBtn.disabled = true;
+    copyLatexBtn.disabled = true;
+    downloadTexBtn.disabled = true;
+    compileBtn.disabled = true;
+    downloadPdfBtn.disabled = true;
+    downloadPdfBtn2.disabled = true;
+    latexOutput.value = '';
+    textOutput.value = '';
+    formulasOutput.value = '';
+    textCount.textContent = '0 righe';
+    formulaCount.textContent = '0';
+    pdfPreview.src = 'about:blank';
+    currentPdfBlob = null;
     setStatus('Pronto per una nuova immagine.');
+    setOcrStatus('');
   });
 
-  // ---------- Dilatazione della maschera ----------
-  // Disegna la maschera più volte in cerchio attorno al centro per espanderla
+  // ============================================================
+  // DILATAZIONE MASCHERA
+  // ============================================================
   function dilateMask(srcMask, W, H, radius){
     if (radius <= 0) return srcMask;
     const out = document.createElement('canvas');
     out.width = W; out.height = H;
     const ctx = out.getContext('2d');
-
-    // Copia originale
     ctx.drawImage(srcMask, 0, 0);
-
-    // Anelli di copie offsettate (dilatazione circolare)
     const rings = [
       { r: radius,        n: 16 },
       { r: radius * 0.66, n: 12 },
@@ -246,7 +584,9 @@
     return out;
   }
 
-  // ---------- Elaborazione ----------
+  // ============================================================
+  // BLUR
+  // ============================================================
   processBtn.addEventListener('click', async () => {
     if (!currentImg || !modelsReady) return;
     processBtn.disabled = true;
@@ -256,7 +596,6 @@
     try{
       await new Promise(r => setTimeout(r, 30));
 
-      // 1) Canvas di lavoro
       const nw = currentImg.naturalWidth;
       const nh = currentImg.naturalHeight;
       const scale = Math.min(1, MAX_DIM / Math.max(nw, nh));
@@ -267,7 +606,6 @@
       work.width = W; work.height = H;
       work.getContext('2d').drawImage(currentImg, 0, 0, W, H);
 
-      // 2) Segmentazione persona (BodyPix) ad alta risoluzione
       setStatus('<span class="spinner"></span> Rilevo le persone…');
       const segmentation = await bodyPixNet.segmentPerson(work, {
         internalResolution: 'full',
@@ -277,14 +615,12 @@
         nmsRadius: 20
       });
 
-      // 3) Rilevamento volti (BlazeFace)
       setStatus('<span class="spinner"></span> Rilevo i volti…');
       let faces = [];
       try{
         faces = await faceDetector.estimateFaces(work, { flipHorizontal: false });
       }catch(e){ console.warn('Face detection fallita:', e); }
 
-      // 4) Maschera: persone (bianco) + teste espanse attorno ai volti
       setStatus('<span class="spinner"></span> Costruisco la maschera…');
       const mask = document.createElement('canvas');
       mask.width = W; mask.height = H;
@@ -303,30 +639,24 @@
       }
       mctx.putImageData(maskData, 0, 0);
 
-      // Per ogni volto: rettangolo "testa intera" (capelli, orecchie, contorno)
       mctx.fillStyle = '#ffffff';
       for (const f of faces){
-        const b = f.box; // {xMin, yMin, xMax, yMax, width, height}
+        const b = f.box;
         const bw = b.width  || (b.xMax - b.xMin);
         const bh = b.height || (b.yMax - b.yMin);
         const cx = b.xMin + bw / 2;
         const cy = b.yMin + bh / 2;
-
-        // Espansione aggressiva verso l'alto (capelli) e moderata ai lati
-        const rx = bw * 0.95;   // ~1.9× larghezza
-        const ry = bh * 1.55;   // ~3.1× altezza totale
-        const cyShift = -bh * 0.55; // sposta in alto il centro
-
+        const rx = bw * 0.95;
+        const ry = bh * 1.55;
+        const cyShift = -bh * 0.55;
         mctx.beginPath();
         mctx.ellipse(cx, cy + cyShift, rx, ry, 0, 0, Math.PI * 2);
         mctx.fill();
       }
 
-      // 5) Dilatazione della maschera (raggio regolabile dall'utente)
       const expandPx = parseInt(expandInput.value, 10) || 0;
       const expandedMask = dilateMask(mask, W, H, expandPx);
 
-      // 6) Ammorbidisci i bordi
       const softMask = document.createElement('canvas');
       softMask.width = W; softMask.height = H;
       const sctx = softMask.getContext('2d');
@@ -334,7 +664,6 @@
       sctx.drawImage(expandedMask, 0, 0);
       sctx.filter = 'none';
 
-      // 7) Strato sfocato
       setStatus('<span class="spinner"></span> Applico la sfocatura…');
       const blurred = document.createElement('canvas');
       blurred.width = W; blurred.height = H;
@@ -343,12 +672,10 @@
       bctx.drawImage(currentImg, 0, 0, W, H);
       bctx.filter = 'none';
 
-      // 8) Ritaglia lo strato sfocato con la maschera
       bctx.globalCompositeOperation = 'destination-in';
       bctx.drawImage(softMask, 0, 0);
       bctx.globalCompositeOperation = 'source-over';
 
-      // 9) Composizione finale: originale + sfocatura mascherata
       resultCanvas.width = W;
       resultCanvas.height = H;
       const octx = resultCanvas.getContext('2d');
@@ -370,7 +697,6 @@
     }
   });
 
-  // ---------- Download ----------
   downloadBtn.addEventListener('click', () => {
     if (!resultCanvas.width) return;
     resultCanvas.toBlob(blob => {
@@ -383,6 +709,259 @@
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     }, 'image/png');
   });
+
+  // ============================================================
+  // OCR → LaTeX
+  // ============================================================
+  ocrBtn.addEventListener('click', async () => {
+    if (!currentImg || !ocrReady) return;
+    ocrBtn.disabled = true;
+    copyLatexBtn.disabled = true;
+    downloadTexBtn.disabled = true;
+    compileBtn.disabled = true;
+    downloadPdfBtn.disabled = true;
+    downloadPdfBtn2.disabled = true;
+    setOcrStatus('<span class="spinner"></span> Analisi OCR in corso…');
+
+    try{
+      const canvas = document.createElement('canvas');
+      canvas.width = currentImg.naturalWidth;
+      canvas.height = currentImg.naturalHeight;
+      canvas.getContext('2d').drawImage(currentImg, 0, 0);
+
+      // --- OCR testo: PaddleOCR se c'è (http), altrimenti Tesseract.js (file://) ---
+      let fullText = '';
+      let items = [];
+      if (ocrEngine){
+        setOcrStatus('<span class="spinner"></span> Riconoscimento testo (PaddleOCR PP-OCRv5)…');
+        const results = await ocrEngine.predict(canvas);
+        const result = results[0] || {};
+        items = result.items || [];
+        fullText = items.map(i => i.text || '').filter(Boolean).join('\n');
+      }else if (tesseractWorker){
+        setOcrStatus('<span class="spinner"></span> Riconoscimento testo (Tesseract.js)…');
+        const { data } = await tesseractWorker.recognize(canvas);
+        fullText = (data.text || '').trim();
+        // Tesseract restituisce le parole con la loro casella: le normalizzo nella
+        // stessa forma di PaddleOCR, così il resto del codice non cambia
+        items = (data.words || []).map(w => ({
+          text: w.text,
+          box: { xMin: w.bbox.x0, yMin: w.bbox.y0, xMax: w.bbox.x1, yMax: w.bbox.y1,
+                 width: w.bbox.x1 - w.bbox.x0, height: w.bbox.y1 - w.bbox.y0 }
+        }));
+      }else{
+        throw new Error('nessun motore OCR disponibile (ricarica la pagina con la connessione attiva)');
+      }
+
+      // --- Riconoscimento formule con TrOCR-LaTeX ---
+      let formulas = [];
+      if (formulaPipeline){
+        setOcrStatus('<span class="spinner"></span> Riconoscimento formule (TrOCR-LaTeX)…');
+        try{
+          const mathRe = /[=+\-*/^_{}\\∫∑∏√]|\\frac|\\sum|\\int/;
+          // Tesseract restituisce una casella per OGNI parola: senza questa
+          // deduplica la stessa regione verrebbe passata più volte al modello
+          const processed = new Set();
+          for (const item of items){
+            const txt = item.text || '';
+            if (mathRe.test(txt) || (item.box && item.box.height < 80)){
+              const box = item.box;
+              if (box){
+                const chiave = `${Math.round(box.xMin)}_${Math.round(box.yMin)}`;
+                if (processed.has(chiave)) continue;
+                processed.add(chiave);
+                const crop = document.createElement('canvas');
+                crop.width = box.width || box.xMax - box.xMin;
+                crop.height = box.height || box.yMax - box.yMin;
+                crop.getContext('2d').drawImage(
+                  canvas,
+                  box.xMin, box.yMin, crop.width, crop.height,
+                  0, 0, crop.width, crop.height
+                );
+                const out = await formulaPipeline(crop, { max_new_tokens: 384 });
+                if (out && out[0] && out[0].generated_text){
+                  let latex = out[0].generated_text.trim();
+                  latex = latex.replace(/^\$\$|\$\$$/g, '').trim();
+                  formulas.push(latex);
+                }
+              }
+            }
+          }
+        }catch(e){
+          console.warn('Formula recognition fallita:', e);
+        }
+      }
+
+      // --- Costruisci documento LaTeX ---
+      const escapeLatex = s => s
+        .replace(/\\/g, '\\textbackslash{}')
+        .replace(/[&%$#_{}]/g, m => '\\' + m)
+        .replace(/\^/g, '\\textasciicircum{}')
+        .replace(/~/g, '\\textasciitilde{}')
+        .replace(/</g, '\\textless{}')
+        .replace(/>/g, '\\textgreater{}');
+
+      const textLines = fullText.split('\n').map(l => l.trim()).filter(Boolean);
+
+      let body = '';
+      for (const line of textLines){
+        body += escapeLatex(line) + '\n\n';
+      }
+      if (formulas.length){
+        body += '\\begin{align*}\n';
+        body += formulas.map(f => f + ' \\\\').join('\n');
+        body += '\n\\end{align*}\n';
+      }
+
+      const latexDoc =
+`\\documentclass[11pt,a4paper]{article}
+\\usepackage[utf8]{inputenc}
+\\usepackage[T1]{fontenc}
+\\usepackage[italian]{babel}
+\\usepackage{amsmath,amssymb,amsfonts}
+\\usepackage{graphicx}
+\\usepackage{booktabs}
+\\usepackage{hyperref}
+\\usepackage[margin=2.5cm]{geometry}
+
+\\title{Documento estratto via OCR}
+\\date{\\today}
+
+\\begin{document}
+\\maketitle
+
+${body || '% Nessun testo riconosciuto'}
+
+\\end{document}`;
+
+      latexOutput.value = latexDoc;
+      textOutput.value = fullText || '(nessun testo)';
+      formulasOutput.value = formulas.length ? formulas.join('\n\n') : '(nessuna formula)';
+
+      textCount.textContent = `${textLines.length} righe`;
+      formulaCount.textContent = formulas.length;
+
+      setOcrStatus(
+        `✅ OCR completato. <strong>${textLines.length}</strong> righe di testo, ` +
+        `<strong>${formulas.length}</strong> formule. Compilo il PDF…`
+      );
+      copyLatexBtn.disabled = false;
+      downloadTexBtn.disabled = false;
+
+      // --- Auto-compilazione PDF ---
+      await compileToPdf(latexDoc);
+
+    }catch(err){
+      console.error('OCR error:', err);
+      setOcrStatus('❌ Errore OCR: ' + err.message);
+    }finally{
+      ocrBtn.disabled = false;
+    }
+  });
+
+  // ============================================================
+  // COMPILAZIONE PDF
+  // ============================================================
+  async function compileToPdf(source){
+    if (!pdfEngineReady){
+      setOcrStatus('⚠️ Compilatore PDF non pronto. Scarica il .tex e compilalo su Overleaf.');
+      compileBtn.disabled = false;
+      return;
+    }
+
+    compileBtn.disabled = true;
+    setOcrStatus(`<span class="spinner"></span> Compilazione LaTeX → PDF (${pdfEngineType === 'stellar' ? 'StellarLatex' : 'Siglum'})…`);
+
+    try{
+      let pdfBytes = null;
+      let log = '';
+
+      if (pdfEngineType === 'stellar'){
+        pdfEngine.writeMemFSFile("main.tex", source);
+        pdfEngine.setEngineMainFile("main.tex");
+        const result = await pdfEngine.compileLaTeX();
+        pdfBytes = result?.pdf;
+        log = result?.log || '';
+      }else if (pdfEngineType === 'siglum'){
+        const result = await pdfEngine.compile({
+          input: source,
+          engine: 'pdflatex'
+        });
+        pdfBytes = result?.pdf;
+        log = result?.log || '';
+      }
+
+      if (pdfBytes && pdfBytes.length > 0){
+        currentPdfBlob = new Blob([pdfBytes], { type: 'application/pdf' });
+        const url = URL.createObjectURL(currentPdfBlob);
+        pdfPreview.src = url;
+        downloadPdfBtn.disabled = false;
+        downloadPdfBtn2.disabled = false;
+        setOcrStatus(
+          `✅ PDF generato (${(currentPdfBlob.size / 1024).toFixed(1)} KB). ` +
+          `Vai al tab "PDF compilato" per vederlo.`
+        );
+      }else{
+        console.error('LaTeX log:', log);
+        setOcrStatus('⚠️ Compilazione fallita. Log (prime righe): ' +
+          (log ? log.split('\n').slice(0,3).join(' · ') : 'nessun log'));
+        compileBtn.disabled = false;
+      }
+    }catch(err){
+      console.error('Compile error:', err);
+      setOcrStatus('❌ Errore di compilazione: ' + err.message);
+      compileBtn.disabled = false;
+    }
+  }
+
+  // Pulsante manuale "Compila PDF"
+  compileBtn.addEventListener('click', async () => {
+    const src = latexOutput.value;
+    if (!src) return;
+    compileBtn.disabled = true;
+    await compileToPdf(src);
+    compileBtn.disabled = false;
+  });
+
+  // Copia LaTeX
+  copyLatexBtn.addEventListener('click', async () => {
+    if (!latexOutput.value) return;
+    try{
+      await navigator.clipboard.writeText(latexOutput.value);
+      setOcrStatus('✅ LaTeX copiato negli appunti.');
+    }catch{
+      latexOutput.select();
+      document.execCommand('copy');
+      setOcrStatus('✅ LaTeX copiato (fallback).');
+    }
+  });
+
+  // Download .tex
+  downloadTexBtn.addEventListener('click', () => {
+    if (!latexOutput.value) return;
+    const blob = new Blob([latexOutput.value], { type: 'text/x-latex' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'documento_estratto.tex';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  });
+
+  // Download .pdf
+  function downloadPdf(){
+    if (!currentPdfBlob) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(currentPdfBlob);
+    a.download = 'documento_estratto.pdf';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+  downloadPdfBtn.addEventListener('click', downloadPdf);
+  downloadPdfBtn2.addEventListener('click', downloadPdf);
 
 })();
 </script>

@@ -1,14 +1,19 @@
-# Privacy Blur 🔒
+# Privacy Blur + OCR → LaTeX → PDF 🔒📄
 
-Sito **in un solo file HTML** che prende in input una foto e **sfoca solo le
-persone** (sagoma intera, testa compresa): si apre `index.html` in un browser e
-si trascina dentro un'immagine. Tutto avviene **nel browser** — nessun file
-viene caricato su un server, nessuna installazione, nessun account.
+Sito **in un solo file HTML** con due mestieri, tutti **nel browser** (nessun file
+caricato su un server, nessuna installazione, nessun account):
 
-**Stato (18/09/2026):** repo creata il **18/09/2026** dal file scaricato dal
-generatore DeepSeek il 17/09/2026 (`deepseek_html_20260917_04c612.html`), qui
-portato come `index.html` **senza modifiche al codice** e documentato con questo
-README. La repo GitHub è **pubblica**: `origin` =
+1. **sfocare solo le persone** (sagoma intera, testa compresa) in una foto;
+2. **estrarre testo e formule** da un'immagine (OCR) e **compilare il PDF** in
+   LaTeX, con il sorgente `.tex` sempre scaricabile.
+
+**Stato (18/09/2026):** la repo nasce il 18/09/2026 con la parte *sfocatura* (file
+DeepSeek `…_04c612.html`, portato qui com'era); lo stesso giorno è arrivata la
+pagina **con l'OCR** (`…_65879b (4).html`) e **qui sono state fatte le tre
+modifiche** che la fanno funzionare anche aperta con doppio clic da `file://`:
+l'avviso in alto, PaddleOCR caricato **solo** via HTTP, e l'OCR di riserva con
+Tesseract.js. La versione **solo-sfocatura** resta nella storia di git (commit
+`ef74b55`). La repo GitHub è **pubblica**: `origin` =
 `https://github.com/Alessandro1040/privacy-blur.git`, branch `main`.
 
 ## Come si usa
@@ -23,6 +28,25 @@ README. La repo GitHub è **pubblica**: `origin` =
 3. Confronta **Originale** e **Risultato** affiancati, poi premi
    **Scarica risultato** (PNG, `immagine_sfocata.png`) o **Reset** per
    ricominciare.
+4. Per il **testo**: stessa foto caricata, premi **Estrai testo & formule** (il
+   risultato compare nelle schede *LaTeX completo*, *Testo grezzo*, *Formule*),
+   poi **Compila PDF** → anteprima nella scheda *PDF compilato* e download di
+   `.tex` e `.pdf`.
+
+### ⚠️ Aprire il file: doppio clic o server?
+
+| Come apri la pagina | Cosa funziona |
+|---|---|
+| **Doppio clic** (`file://`) | sfocatura, OCR **Tesseract.js**, formule, PDF |
+| **Server locale** (`python3 -m http.server 8899` → <http://localhost:8899/index.html>) | **tutto**, incluso l'OCR avanzato **PaddleOCR** |
+| **Sito pubblicato** (`https://`) | tutto |
+
+Il motivo è tecnico: **PaddleOCR scarica i modelli ONNX con `fetch()`**, e i
+browser bloccano quelle richieste quando la pagina è aperta da `file://`
+(protocollo senza origine, quindi CORS). Da `file://` la pagina **non prova
+nemmeno** a caricarli: mostra l'avviso arancione in alto, usa Tesseract.js e
+continua a funzionare. Da `http://` o `https://` parte invece PaddleOCR, con
+Tesseract.js che resta pronto come rete di sicurezza.
 
 La manopola **Espansione** (0–40 px, default **18**) allarga la maschera attorno
 a persone e teste: più alta = più prudente (copre anche capelli e contorno),
@@ -48,6 +72,27 @@ più bassa = più preciso.
    resta identico, pixel per pixel**; in alto compare il riepilogo
    («Volti rilevati: N · area persona ≈ X% · espansione Ypx»).
 
+## La parte OCR → LaTeX → PDF (come funziona)
+
+1. l'immagine caricata va al motore OCR: **PaddleOCR** (PP-OCRv5, WebAssembly) se
+   la pagina è servita via **HTTP**, altrimenti **Tesseract.js** (`ita+eng`), che
+   funziona anche da `file://`;
+2. le parole riconosciute tornano **normalizzate nella stessa forma** — `{text,
+   box}`, con la casella del riquadro — qualunque sia il motore, così il resto del
+   codice non cambia;
+3. le regioni che «sembrano formule» (caratteri matematici nel testo, oppure
+   riquadri bassi) vengono ritagliate e passate a **TrOCR-LaTeX**
+   (`onnx-community/latex_finetuned-ONNX`, via Transformers.js), con una
+   **deduplica per riquadro**: Tesseract restituisce una casella per *ogni parola*
+   e senza quel controllo la stessa regione arriverebbe più volte al modello;
+4. il testo finisce in un documento LaTeX (`article`, `babel` italiano, `amsmath`,
+   `graphicx`, `geometry`) e le formule in un blocco `align*`;
+5. la compilazione avviene **nel browser**: **StellarLatex** se i suoi file sono in
+   `stellarlatex/` (cartella locale, non versionata), altrimenti **Siglum** dal CDN
+   (`@siglum/engine`, ~45 MB la prima volta, può richiedere 1–2 minuti). Il PDF
+   compare in un'anteprima con due pulsanti di download; il **`.tex` si scarica
+   sempre** e si può compilare altrove (Overleaf).
+
 ## File presenti
 
 | File           | Ruolo                                                                  |
@@ -55,6 +100,7 @@ più bassa = più preciso.
 | `index.html`   | il sito: HTML + CSS + JavaScript in un solo file, zero da installare    |
 | `README.md`    | questo file: uso, come funziona, limiti e note operative                |
 | `.gitignore`   | esclusioni: foto di prova (personali), versioni precedenti, file di sistema |
+| `stellarlatex/` | **opzionale, non versionata**: qui dentro i file di StellarLatex (`PdfTeXEngine.js` + i suoi asset) se vuoi compilare il PDF in locale invece di scaricare Siglum dal CDN |
 
 ## Limiti noti
 
@@ -84,21 +130,22 @@ Da tenere presente nelle sessioni di lavoro successive:
   **senza spazi**) e si committa da lì; `origin` =
   `https://github.com/Alessandro1040/privacy-blur.git`, branch `main`, repo
   **pubblica** (creata con `gh`, autenticato come Alessandro1040).
-- **Provenienza del file.** `index.html` è **l'ultimo file scaricato** dal
-  generatore DeepSeek il 18/09/2026 alle 00:31
-  (`~/Downloads/deepseek_html_20260917_04c612.html`, MD5
-  `62e006162bf051f56c9c2b08769e72ed`), copiato **senza toccare il codice**.
-  In `~/Downloads` ci sono due versioni precedenti dello stesso sito
-  (`deepseek_html_20260917_702af5.html` e la copia «(1)»): una usava
-  `face-api.js`, l'altra solo BodyPix; quella portata qui è la più completa
-  (BodyPix **+** rilevamento volti **+** maschera della testa **+** espansione
-  regolabile). Le versioni vecchie non sono in repo (`.gitignore` le esclude con
-  `deepseek_html_*.html`).
+- **Provenienza del file.** La parte *sfocatura* viene dal file DeepSeek
+  `…_04c612.html` (portato qui com'era il 18/09/2026); la pagina attuale è la
+  versione **con l'OCR** scaricata dal generatore lo stesso giorno
+  (`~/Downloads/deepseek_html_20260917_65879b (4).html`, 31,6 KB, ore 01:27),
+  copiata qui e poi **modificata** con le tre correzioni per `file://` (vedi
+  sotto). In `~/Downloads` restano le iterazioni precedenti dello stesso sito
+  (`…_65879b` senza numero, `(1)`, `(2)`, `(3)`, `…_ffdac5*`): alcune usano
+  Tesseract.js, altre PaddleOCR, una anche Siglum. **Non sono in repo**
+  (`.gitignore` esclude `deepseek_html_*.html`).
 - **Nessun server e nessun test nel repo.** Il sito è un file HTML unico: non
   c'è un'app da avviare né `requirements.txt`. Per provarlo:
   `python3 -m http.server 8899` dalla cartella e poi
-  <http://localhost:8899/index.html> (anche l'apertura diretta con `file://`
-  funziona: le librerie arrivano da CDN).
+  <http://localhost:8899/index.html>. **Da `file://` funziona tutto tranne
+  l'OCR avanzato**: PaddleOCR ha bisogno di HTTP per scaricare i modelli ONNX,
+  quindi da `file://` la pagina usa Tesseract.js e lo dice con l'avviso in alto
+  (la tabella è in «Come si usa»).
 - **Le foto di prova NON stanno in repo**: `.gitignore` esclude `*.jpg`,
   `*.jpeg`, `*.png`, `*.webp`, `*.heic`, `*.tiff`. Le foto usate per le
   verifiche (`IMG-8246.jpg`, `IMG-8250.jpg`, `IMG_9206.jpg`, 4032×3024, in
@@ -129,4 +176,28 @@ Da tenere presente nelle sessioni di lavoro successive:
   riprovare con la procedura qui sopra, aggiornare la sezione «Come funziona»
   (e le presenti note) se cambiano librerie o soglie, quindi commit + push su
   `main`.
+- **Le tre correzioni per `file://` (18/09/2026, fatte in questa repo).** Il file
+  arrivato da DeepSeek caricava PaddleOCR **sempre** (tag `onnxruntime` fisso + un
+  modulo ESM): aperto con doppio clic, il `fetch()` dei modelli ONNX veniva
+  bloccato dal browser per CORS e in console restava un errore poco comprensibile.
+  Ora:
+  1. uno script in testa legge `location.protocol`: se non è `http(s)` mostra
+     l'avviso `#fileProtocolWarning` (stile `.alert`, aggiunto al CSS);
+  2. ONNX Runtime e il modulo PaddleOCR vengono **creati solo su http(s)**: da
+     `file://` non si scaricano nemmeno, e in console resta un solo avviso chiaro;
+  3. Tesseract.js è caricato **sempre** e `initOcr()` lo prova per primo; su
+     http(s) aspetta `paddleocr-ready` (max **30 s**) e usa PaddleOCR, altrimenti
+     resta su Tesseract.js dicendolo nello stato (`✅ OCR pronto (Tesseract.js)`).
+     Il riconoscimento normalizza l'output dei due motori nella stessa forma
+     (`{text, box}`) e **deduplica i riquadri** prima del modello delle formule
+     (Tesseract restituisce una casella per ogni parola). Sistemato anche lo stato
+     che prima scriveva «⚠️ OCR pronto» (un avviso per una cosa che andava bene).
+- **Verifiche del 18/09/2026 (dopo le correzioni).** I 5 blocchi `<script>` della
+  pagina si compilano (JavaScriptCore, `new Function`); in **Chrome headless**:
+  da `file://` → avviso **visibile** (`display: block`), **nessun** tag
+  `onnxruntime` nel DOM, Tesseract.js presente; da `http://localhost:8123` →
+  avviso **nascosto** (`display:none`), tag `onnxruntime` **presente**,
+  Tesseract.js presente. **Non ancora provato end-to-end** il riconoscimento su una
+  foto vera: serve un'immagine con testo e i modelli da CDN (il flusso resta quello
+  di prima, cambia solo quale motore risponde).
 
