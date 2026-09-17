@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Blur — Sfoca Persone e Volti</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#181b22; --accent:#4f8cff;
+    --text:#e8ecf1; --muted:#9aa4b2;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh;
+    background:radial-gradient(1200px 800px at 50% -10%, #1b2230 0%, #0f1115 60%);
+    color:var(--text);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    display:flex; flex-direction:column; align-items:center;
+    padding:32px 16px 64px;
+  }
+  h1{font-size:1.6rem;margin:0 0 6px;text-align:center}
+  .sub{color:var(--muted);font-size:.95rem;margin-bottom:24px;text-align:center;max-width:640px}
+  .card{
+    background:var(--card);border:1px solid #262b35;border-radius:16px;
+    padding:20px;width:100%;max-width:920px;
+    box-shadow:0 10px 40px rgba(0,0,0,.4);
+  }
+  .drop{
+    border:2px dashed #333b48;border-radius:12px;padding:36px 16px;
+    text-align:center;cursor:pointer;transition:.2s;color:var(--muted);
+  }
+  .drop:hover,.drop.over{border-color:var(--accent);color:var(--text);background:rgba(79,140,255,.06)}
+  input[type=file]{display:none}
+  .row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:16px;align-items:center}
+  .btn{
+    background:var(--accent);color:#fff;border:0;border-radius:10px;
+    padding:11px 18px;font-size:.95rem;font-weight:600;cursor:pointer;transition:.2s;
+  }
+  .btn:hover{filter:brightness(1.1)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn.secondary{background:#262b35}
+  .slider{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:.85rem}
+  .slider input{width:110px}
+  .status{text-align:center;color:var(--muted);margin-top:14px;font-size:.9rem;min-height:1.2em}
+  .preview{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}
+  @media (max-width:700px){.preview{grid-template-columns:1fr}}
+  .preview figure{margin:0}
+  .preview img,.preview canvas{
+    width:100%;border-radius:10px;display:block;border:1px solid #262b35;
+  }
+  figcaption{text-align:center;color:var(--muted);font-size:.82rem;margin-top:6px}
+  .spinner{
+    display:inline-block;width:14px;height:14px;border:2px solid #fff4;
+    border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;
+    vertical-align:-2px;margin-right:6px;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .hint{font-size:.8rem;color:var(--muted);margin-top:6px;text-align:center}
+</style>
+</head>
+<body>
+
+<h1>🔒 Privacy Blur</h1>
+<p class="sub">
+  Carica una foto: ogni persona (anche di spalle) e ogni testa/capelli verranno sfocati.
+  Tutto avviene <strong>nel tuo browser</strong>, nessun file viene caricato online.
+</p>
+
+<div class="card">
+  <label class="drop" id="drop">
+    <input type="file" id="fileInput" accept="image/*">
+    <div style="font-size:2rem;margin-bottom:8px">📷</div>
+    <div><strong>Clicca</strong> o trascina qui un'immagine</div>
+  </label>
+
+  <div class="row">
+    <button class="btn" id="processBtn" disabled>Elabora e sfoca</button>
+    <button class="btn secondary" id="downloadBtn" disabled>Scarica risultato</button>
+    <button class="btn secondary" id="resetBtn" disabled>Reset</button>
+    <div class="slider" title="Espansione della maschera attorno a persone e teste">
+      <label for="expand">Espansione</label>
+      <input type="range" id="expand" min="0" max="40" value="18" step="1">
+      <span id="expandVal">18px</span>
+    </div>
+  </div>
+
+  <div class="status" id="status"></div>
+
+  <div class="preview" id="preview" style="display:none">
+    <figure>
+      <img id="originalImg" alt="Originale">
+      <figcaption>Originale</figcaption>
+    </figure>
+    <figure>
+      <canvas id="resultCanvas"></canvas>
+      <figcaption>Risultato (persone + teste sfocate)</figcaption>
+    </figure>
+  </div>
+
+  <div class="hint">Copertura: intera sagoma persona + espansione per capelli e contorno testa.</div>
+</div>
+
+<!-- TensorFlow.js PRIMA delle librerie modelli -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix@2.2.0/dist/body-pix.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-detection@1.0.1/dist/face-detection.min.js"></script>
+
+<script>
+(() => {
+  const drop        = document.getElementById('drop');
+  const fileInput   = document.getElementById('fileInput');
+  const processBtn  = document.getElementById('processBtn');
+  const downloadBtn = document.getElementById('downloadBtn');
+  const resetBtn    = document.getElementById('resetBtn');
+  const statusEl    = document.getElementById('status');
+  const preview     = document.getElementById('preview');
+  const originalImg = document.getElementById('originalImg');
+  const resultCanvas= document.getElementById('resultCanvas');
+  const expandInput = document.getElementById('expand');
+  const expandVal   = document.getElementById('expandVal');
+
+  expandInput.addEventListener('input', () => {
+    expandVal.textContent = expandInput.value + 'px';
+  });
+
+  let currentImg = null;
+  let bodyPixNet = null;
+  let faceDetector = null;
+  let modelsReady = false;
+
+  const MAX_DIM  = 1280;
+  const BLUR_PX  = 24;
+  const FEATHER  = 8;
+
+  function setStatus(html){ statusEl.innerHTML = html; }
+
+  // ---------- Caricamento modelli ----------
+  async function loadModels(){
+    try{
+      if (typeof bodyPix === 'undefined') throw new Error('body-pix non caricato.');
+      if (typeof faceDetection === 'undefined') throw new Error('face-detection non caricato.');
+      if (typeof tf === 'undefined') throw new Error('TensorFlow.js non caricato.');
+
+      setStatus('<span class="spinner"></span> Caricamento modelli di IA…');
+
+      // BodyPix più accurato (multiplier 1.0 = migliore qualità sul contorno)
+      bodyPixNet = await bodyPix.load({
+        architecture: 'MobileNetV1',
+        outputStride: 16,
+        multiplier: 1.0,
+        quantBytes: 2
+      });
+
+      // Rilevatore volti BlazeFace (TFJS runtime → nessun conflitto con body-pix)
+      faceDetector = await faceDetection.createDetector(
+        faceDetection.SupportedModels.MediaPipeFaceDetector,
+        { runtime: 'tfjs', maxFaces: 30 }
+      );
+
+      modelsReady = true;
+      setStatus('✅ Modelli pronti. Carica un\'immagine.');
+      if (currentImg) processBtn.disabled = false;
+    }catch(err){
+      console.error(err);
+      setStatus('❌ Errore nel caricamento dei modelli: ' + err.message);
+    }
+  }
+  loadModels();
+
+  // ---------- Upload ----------
+  drop.addEventListener('click', () => fileInput.click());
+  ['dragenter','dragover'].forEach(ev =>
+    drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); })
+  );
+  ['dragleave','drop'].forEach(ev =>
+    drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); })
+  );
+  drop.addEventListener('drop', e => {
+    const f = e.dataTransfer.files?.[0];
+    if (f) handleFile(f);
+  });
+  fileInput.addEventListener('change', e => {
+    const f = e.target.files?.[0];
+    if (f) handleFile(f);
+  });
+
+  function handleFile(file){
+    if (!file.type.startsWith('image/')){
+      setStatus('⚠️ Il file selezionato non è un\'immagine.');
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      currentImg = img;
+      originalImg.src = url;
+      preview.style.display = 'grid';
+      resultCanvas.width = 0; resultCanvas.height = 0;
+      processBtn.disabled = !modelsReady;
+      downloadBtn.disabled = true;
+      resetBtn.disabled = false;
+      setStatus(modelsReady
+        ? '📸 Immagine caricata. Premi "Elabora e sfoca".'
+        : '⏳ Attendo il caricamento dei modelli…');
+    };
+    img.onerror = () => setStatus('❌ Impossibile leggere l\'immagine.');
+    img.src = url;
+  }
+
+  // ---------- Reset ----------
+  resetBtn.addEventListener('click', () => {
+    currentImg = null;
+    fileInput.value = '';
+    originalImg.removeAttribute('src');
+    resultCanvas.width = 0; resultCanvas.height = 0;
+    preview.style.display = 'none';
+    processBtn.disabled = true;
+    downloadBtn.disabled = true;
+    resetBtn.disabled = true;
+    setStatus('Pronto per una nuova immagine.');
+  });
+
+  // ---------- Dilatazione della maschera ----------
+  // Disegna la maschera più volte in cerchio attorno al centro per espanderla
+  function dilateMask(srcMask, W, H, radius){
+    if (radius <= 0) return srcMask;
+    const out = document.createElement('canvas');
+    out.width = W; out.height = H;
+    const ctx = out.getContext('2d');
+
+    // Copia originale
+    ctx.drawImage(srcMask, 0, 0);
+
+    // Anelli di copie offsettate (dilatazione circolare)
+    const rings = [
+      { r: radius,        n: 16 },
+      { r: radius * 0.66, n: 12 },
+      { r: radius * 0.33, n: 8  }
+    ];
+    for (const ring of rings){
+      for (let i = 0; i < ring.n; i++){
+        const a = (i / ring.n) * Math.PI * 2;
+        ctx.drawImage(srcMask, Math.cos(a) * ring.r, Math.sin(a) * ring.r);
+      }
+    }
+    return out;
+  }
+
+  // ---------- Elaborazione ----------
+  processBtn.addEventListener('click', async () => {
+    if (!currentImg || !modelsReady) return;
+    processBtn.disabled = true;
+    downloadBtn.disabled = true;
+    setStatus('<span class="spinner"></span> Analisi della scena in corso…');
+
+    try{
+      await new Promise(r => setTimeout(r, 30));
+
+      // 1) Canvas di lavoro
+      const nw = currentImg.naturalWidth;
+      const nh = currentImg.naturalHeight;
+      const scale = Math.min(1, MAX_DIM / Math.max(nw, nh));
+      const W = Math.max(1, Math.round(nw * scale));
+      const H = Math.max(1, Math.round(nh * scale));
+
+      const work = document.createElement('canvas');
+      work.width = W; work.height = H;
+      work.getContext('2d').drawImage(currentImg, 0, 0, W, H);
+
+      // 2) Segmentazione persona (BodyPix) ad alta risoluzione
+      setStatus('<span class="spinner"></span> Rilevo le persone…');
+      const segmentation = await bodyPixNet.segmentPerson(work, {
+        internalResolution: 'full',
+        segmentationThreshold: 0.6,
+        maxDetections: 30,
+        scoreThreshold: 0.2,
+        nmsRadius: 20
+      });
+
+      // 3) Rilevamento volti (BlazeFace)
+      setStatus('<span class="spinner"></span> Rilevo i volti…');
+      let faces = [];
+      try{
+        faces = await faceDetector.estimateFaces(work, { flipHorizontal: false });
+      }catch(e){ console.warn('Face detection fallita:', e); }
+
+      // 4) Maschera: persone (bianco) + teste espanse attorno ai volti
+      setStatus('<span class="spinner"></span> Costruisco la maschera…');
+      const mask = document.createElement('canvas');
+      mask.width = W; mask.height = H;
+      const mctx = mask.getContext('2d');
+
+      const maskData = mctx.createImageData(W, H);
+      const d = maskData.data;
+      const seg = segmentation.data;
+      let personePx = 0;
+      for (let i = 0; i < W * H; i++){
+        if (seg[i]){
+          const o = i * 4;
+          d[o] = 255; d[o+1] = 255; d[o+2] = 255; d[o+3] = 255;
+          personePx++;
+        }
+      }
+      mctx.putImageData(maskData, 0, 0);
+
+      // Per ogni volto: rettangolo "testa intera" (capelli, orecchie, contorno)
+      mctx.fillStyle = '#ffffff';
+      for (const f of faces){
+        const b = f.box; // {xMin, yMin, xMax, yMax, width, height}
+        const bw = b.width  || (b.xMax - b.xMin);
+        const bh = b.height || (b.yMax - b.yMin);
+        const cx = b.xMin + bw / 2;
+        const cy = b.yMin + bh / 2;
+
+        // Espansione aggressiva verso l'alto (capelli) e moderata ai lati
+        const rx = bw * 0.95;   // ~1.9× larghezza
+        const ry = bh * 1.55;   // ~3.1× altezza totale
+        const cyShift = -bh * 0.55; // sposta in alto il centro
+
+        mctx.beginPath();
+        mctx.ellipse(cx, cy + cyShift, rx, ry, 0, 0, Math.PI * 2);
+        mctx.fill();
+      }
+
+      // 5) Dilatazione della maschera (raggio regolabile dall'utente)
+      const expandPx = parseInt(expandInput.value, 10) || 0;
+      const expandedMask = dilateMask(mask, W, H, expandPx);
+
+      // 6) Ammorbidisci i bordi
+      const softMask = document.createElement('canvas');
+      softMask.width = W; softMask.height = H;
+      const sctx = softMask.getContext('2d');
+      sctx.filter = `blur(${FEATHER}px)`;
+      sctx.drawImage(expandedMask, 0, 0);
+      sctx.filter = 'none';
+
+      // 7) Strato sfocato
+      setStatus('<span class="spinner"></span> Applico la sfocatura…');
+      const blurred = document.createElement('canvas');
+      blurred.width = W; blurred.height = H;
+      const bctx = blurred.getContext('2d');
+      bctx.filter = `blur(${BLUR_PX}px)`;
+      bctx.drawImage(currentImg, 0, 0, W, H);
+      bctx.filter = 'none';
+
+      // 8) Ritaglia lo strato sfocato con la maschera
+      bctx.globalCompositeOperation = 'destination-in';
+      bctx.drawImage(softMask, 0, 0);
+      bctx.globalCompositeOperation = 'source-over';
+
+      // 9) Composizione finale: originale + sfocatura mascherata
+      resultCanvas.width = W;
+      resultCanvas.height = H;
+      const octx = resultCanvas.getContext('2d');
+      octx.drawImage(currentImg, 0, 0, W, H);
+      octx.drawImage(blurred, 0, 0);
+
+      const perc = ((personePx / (W * H)) * 100).toFixed(1);
+      setStatus(
+        `✅ Fatto! Volti rilevati: <strong>${faces.length}</strong> · ` +
+        `area persona ≈ <strong>${perc}%</strong> · espansione <strong>${expandPx}px</strong>.`
+      );
+      downloadBtn.disabled = false;
+
+    }catch(err){
+      console.error(err);
+      setStatus('❌ Errore durante l\'elaborazione: ' + err.message);
+    }finally{
+      processBtn.disabled = false;
+    }
+  });
+
+  // ---------- Download ----------
+  downloadBtn.addEventListener('click', () => {
+    if (!resultCanvas.width) return;
+    resultCanvas.toBlob(blob => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'immagine_sfocata.png';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    }, 'image/png');
+  });
+
+})();
+</script>
+</body>
+</html>

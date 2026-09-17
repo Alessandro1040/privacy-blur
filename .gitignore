@@ -1,0 +1,21 @@
+# ── Foto di prova e materiale personale: restano SOLO in locale ──────────────
+# Il sito serve a oscurare le persone: le foto usate per provarlo non devono
+# finire in un repository. Se un giorno serve un'immagine dimostrativa, va
+# aggiunta a mano con `git add -f` dopo averla scelta (pubblica e senza volti).
+foto/
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.heic
+*.tiff
+
+# ── Copie delle versioni precedenti dello stesso sito ───────────────────────
+# (i file scaricati dal generatore, es. deepseek_html_20260917_702af5.html)
+deepseek_html_*.html
+
+# ── File di sistema e cache ────────────────────────────────────────────────
+.DS_Store
+__pycache__/
+*.pyc
+*.log
