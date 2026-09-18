@@ -224,8 +224,9 @@
   }
 </script>
 
-<!-- Transformers.js per modello formule -->
-<script src="https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0"></script>
+<!-- Transformers.js (modello formule): NIENTE tag classico — è un modulo ESM e
+     uno script normale fallisce con «Cannot use 'import.meta' outside a module».
+     Viene importato dinamicamente dentro initOcr(), vedi più sotto. -->
 
 <!-- StellarLatex: carica PdfTeXEngine.js dal percorso locale o CDN -->
 <!-- Scarica i file da https://github.com/Arxtect/StellarLatex/releases e mettili in ./stellarlatex/ -->
@@ -314,6 +315,7 @@
   let formulaPipeline = null;
   let ocrReady = false;
   let ocrSource = '';            // da dove arriva il testo riconosciuto (per lo stato)
+  let formuleInCorso = false;    // il modello delle formule si scarica in background
 
   let pdfEngine = null;
   let pdfEngineReady = false;
@@ -392,7 +394,10 @@
           bundlesUrl: 'https://cdn.siglum.org/tl2025/bundles',
           wasmUrl: 'https://cdn.siglum.org/tl2025/busytex.wasm'
         });
-        pdfEngine.ready().then(() => {
+        // @siglum/engine ha init() e NON ready(): l'errore «pdfEngine.ready is not
+        // a function» impediva di inizializzare il compilatore (e quindi di
+        // compilare il PDF in locale) — trovato dalla prova end-to-end del 18/09/2026
+        pdfEngine.init().then(() => {
           pdfEngineReady = true;
           console.log('Siglum pronto.');
           updateOcrStatus();
@@ -416,10 +421,13 @@
     const ocrInfo = ocrReady
       ? `✅ OCR pronto${ocrSource ? ' (' + ocrSource + ')' : ''}.`
       : '⏳ OCR in caricamento…';
+    const formuleInfo = formulaPipeline
+      ? ' ✅ modello formule.'
+      : (formuleInCorso ? ' ⏳ modello formule in caricamento (è grosso: il testo si può già estrarre).' : '');
     const pdfInfo = pdfEngineReady
       ? `✅ Compilatore PDF pronto (${pdfEngineType === 'stellar' ? 'StellarLatex' : 'Siglum'}).`
       : '⏳ Compilatore PDF in caricamento…';
-    setOcrStatus(ocrInfo + ' ' + pdfInfo);
+    setOcrStatus(ocrInfo + formuleInfo + ' ' + pdfInfo);
   }
 
   // ============================================================
@@ -462,25 +470,64 @@
       }
     }
 
-    // Il modello delle formule è indipendente dall'OCR: si prova comunque
-    try{
-      if (typeof Transformers !== 'undefined'){
-        setOcrStatus('<span class="spinner"></span> Caricamento modello formule (TrOCR-LaTeX)…');
-        const { pipeline } = Transformers;
-        formulaPipeline = await pipeline(
-          'image-to-text',
-          'onnx-community/latex_finetuned-ONNX'
-        );
-      }
-    }catch(err){ console.warn('Modello formule non caricato:', err); }
-
     ocrReady = !!(ocrEngine || tesseractWorker);
     ocrSource = ocrEngine ? 'PaddleOCR + Tesseract' : 'Tesseract.js';
     if (!ocrReady){
       setOcrStatus('⚠️ OCR non disponibile: i modelli arrivano da CDN, serve la connessione.');
-    }else{
+      return;
+    }
+    updateOcrStatus();
+    if (currentImg) ocrBtn.disabled = false;
+
+    // Il modello delle formule (TrOCR-LaTeX) si carica in BACKGROUND: è grosso
+    // (centinaia di MB) e non deve bloccare il testo. Se si preme «Estrai testo &
+    // formule» prima che sia pronto il testo arriva lo stesso (le formule no: il
+    // gestore controlla `if (formulaPipeline)`).
+    caricaModelloFormule();
+  }
+
+  async function caricaModelloFormule(){
+    // Transformers.js va importato come modulo: il tag <script> classico non
+    // partiva («Cannot use 'import.meta' outside a module») ed è il difetto che
+    // teneva a zero le formule riconosciute (prova end-to-end del 18/09/2026).
+    formuleInCorso = true;
+    updateOcrStatus();
+    try{
+      if (!window.Transformers || !window.Transformers.pipeline){
+        window.Transformers = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0/+esm');
+      }
+      // I modelli LaTeX-OCR con i file ONNX COMPLETI sono pochi: si prova in ordine
+      // e si usa il primo che si carica. Verificato il 18/09/2026 su una formula
+      // disegnata in un canvas: «Youn-Sung/latex-finetuned-onnx» (dtype fp32) ha
+      // encoder_model + decoder_model_merged e ha reso «f(x) = x² + 3x − 1» come
+      // «f(x)=x^{2}+3x-1»; gli altri due chiedono `decoder_model_merged[_quantized]
+      // .onnx`, che nei loro repository NON c'è (404), quindi oggi non partono —
+      // restano in lista come tentativi, senza dover toccare il codice se un giorno
+      // pubblicano i file.
+      const MODELLI_FORMULE = [
+        { id: 'Youn-Sung/latex-finetuned-onnx', opzioni: { dtype: 'fp32' } },
+        { id: 'onnx-community/nougat-latex-base-ONNX', opzioni: { dtype: 'q8' } },
+        { id: 'onnx-community/latex_finetuned-ONNX', opzioni: { dtype: 'fp32' } }
+      ];
+      for (const modello of MODELLI_FORMULE){
+        try{
+          formulaPipeline = await window.Transformers.pipeline(
+            'image-to-text', modello.id, modello.opzioni
+          );
+          console.log('Modello formule pronto:', modello.id);
+          break;
+        }catch(err){
+          console.warn(`Modello formule «${modello.id}» non caricato:`, err.message);
+        }
+      }
+      if (!formulaPipeline){
+        console.warn('Nessun modello per le formule: il testo si estrae comunque, le formule resteranno fuori.');
+      }
+    }catch(err){
+      console.warn('Modello formule non caricato (le formule resteranno fuori):', err);
+    }finally{
+      formuleInCorso = false;
       updateOcrStatus();
-      if (currentImg) ocrBtn.disabled = false;
     }
   }
   setTimeout(initOcr, 500);
@@ -710,6 +757,34 @@
     }, 'image/png');
   });
 
+  // La casella di un item OCR non ha lo stesso nome nei due motori: Tesseract dà
+  // {xMin,yMin,xMax,yMax} (e io lo normalizzo così), PaddleOCR può dare gli stessi
+  // campi oppure i 4 punti del rettangolo in `poly`/`points`/array. Senza questa
+  // normalizzazione il ritaglio per le formule non partiva MAI con PaddleOCR: era
+  // il motivo di «formule: 0» (trovato dalla prova end-to-end del 18/09/2026).
+  function casellaItem(item){
+    if (!item) return null;
+    const b = item.box || item.bbox || null;
+    if (b && isFinite(b.xMin) && isFinite(b.yMin)){
+      const xMax = isFinite(b.xMax) ? b.xMax : b.xMin + (parseFloat(b.width) || 0);
+      const yMax = isFinite(b.yMax) ? b.yMax : b.yMin + (parseFloat(b.height) || 0);
+      return { x: b.xMin, y: b.yMin, w: Math.max(1, xMax - b.xMin), h: Math.max(1, yMax - b.yMin) };
+    }
+    if (b && isFinite(b.x) && isFinite(b.y)){
+      return { x: b.x, y: b.y, w: Math.max(1, parseFloat(b.width) || 1),
+               h: Math.max(1, parseFloat(b.height) || 1) };
+    }
+    const punti = item.poly || item.points || (Array.isArray(b) ? b : null);
+    if (Array.isArray(punti) && punti.length >= 3){
+      const xs = punti.map(p => (Array.isArray(p) ? p[0] : p.x));
+      const ys = punti.map(p => (Array.isArray(p) ? p[1] : p.y));
+      const x1 = Math.min(...xs), y1 = Math.min(...ys);
+      const x2 = Math.max(...xs), y2 = Math.max(...ys);
+      return { x: x1, y: y1, w: Math.max(1, x2 - x1), h: Math.max(1, y2 - y1) };
+    }
+    return null;
+  }
+
   // ============================================================
   // OCR → LaTeX
   // ============================================================
@@ -759,32 +834,36 @@
         setOcrStatus('<span class="spinner"></span> Riconoscimento formule (TrOCR-LaTeX)…');
         try{
           const mathRe = /[=+\-*/^_{}\\∫∑∏√]|\\frac|\\sum|\\int/;
-          // Tesseract restituisce una casella per OGNI parola: senza questa
-          // deduplica la stessa regione verrebbe passata più volte al modello
-          const processed = new Set();
+          const processed = new Set();   // Tesseract dà una casella per OGNI parola
+          // TETTO e filtro: su una foto da 12 MP le caselle sono centinaia e ogni
+          // inferenza costa 1-3 s senza wasm accelerato → senza questi due limiti
+          // l'OCR sembrava piantato (prova end-to-end del 18/09/2026).
+          const MAX_FORMULE = 12;
           for (const item of items){
+            if (formulas.length >= MAX_FORMULE) break;
+            const r = casellaItem(item);
+            if (!r) continue;
             const txt = item.text || '';
-            if (mathRe.test(txt) || (item.box && item.box.height < 80)){
-              const box = item.box;
-              if (box){
-                const chiave = `${Math.round(box.xMin)}_${Math.round(box.yMin)}`;
-                if (processed.has(chiave)) continue;
-                processed.add(chiave);
-                const crop = document.createElement('canvas');
-                crop.width = box.width || box.xMax - box.xMin;
-                crop.height = box.height || box.yMax - box.yMin;
-                crop.getContext('2d').drawImage(
-                  canvas,
-                  box.xMin, box.yMin, crop.width, crop.height,
-                  0, 0, crop.width, crop.height
-                );
-                const out = await formulaPipeline(crop, { max_new_tokens: 384 });
-                if (out && out[0] && out[0].generated_text){
-                  let latex = out[0].generated_text.trim();
-                  latex = latex.replace(/^\$\$|\$\$$/g, '').trim();
-                  formulas.push(latex);
-                }
-              }
+            if (!(mathRe.test(txt) || r.h < 80)) continue;  // formule o riquadri bassi
+            if (r.w * r.h > 0.25 * canvas.width * canvas.height) continue;  // non è una formula
+            const chiave = `${Math.round(r.x)}_${Math.round(r.y)}`;
+            if (processed.has(chiave)) continue;
+            processed.add(chiave);
+            const crop = document.createElement('canvas');
+            crop.width = Math.round(r.w);
+            crop.height = Math.round(r.h);
+            crop.getContext('2d').drawImage(
+              canvas,
+              r.x, r.y, r.w, r.h,
+              0, 0, crop.width, crop.height
+            );
+            setOcrStatus(`<span class="spinner"></span> Formule: ${formulas.length} trovate (max ${MAX_FORMULE})…`);
+            // L'immagine va passata come data URL (o RawImage), non il canvas:
+            // con il canvas l'errore era «Unsupported input type: object»
+            const out = await formulaPipeline(crop.toDataURL('image/png'), { max_new_tokens: 384 });
+            if (out && out[0] && out[0].generated_text){
+              const latex = out[0].generated_text.trim().replace(/^\$\$|\$\$$/g, '').trim();
+              if (latex) formulas.push(latex);
             }
           }
         }catch(e){
@@ -883,12 +962,12 @@ ${body || '% Nessun testo riconosciuto'}
         pdfBytes = result?.pdf;
         log = result?.log || '';
       }else if (pdfEngineType === 'siglum'){
-        const result = await pdfEngine.compile({
-          input: source,
-          engine: 'pdflatex'
-        });
+        // API di @siglum/engine: compile(source, { engine }) — la sorgente è il
+        // PRIMO argomento; passando {input: source} il worker riceveva un oggetto
+        // e la compilazione non partiva
+        const result = await pdfEngine.compile(source, { engine: 'pdflatex' });
         pdfBytes = result?.pdf;
-        log = result?.log || '';
+        log = result?.log || result?.error || '';
       }
 
       if (pdfBytes && pdfBytes.length > 0){

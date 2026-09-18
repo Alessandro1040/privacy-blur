@@ -176,28 +176,76 @@ Da tenere presente nelle sessioni di lavoro successive:
   riprovare con la procedura qui sopra, aggiornare la sezione «Come funziona»
   (e le presenti note) se cambiano librerie o soglie, quindi commit + push su
   `main`.
-- **Le tre correzioni per `file://` (18/09/2026, fatte in questa repo).** Il file
-  arrivato da DeepSeek caricava PaddleOCR **sempre** (tag `onnxruntime` fisso + un
-  modulo ESM): aperto con doppio clic, il `fetch()` dei modelli ONNX veniva
-  bloccato dal browser per CORS e in console restava un errore poco comprensibile.
-  Ora:
-  1. uno script in testa legge `location.protocol`: se non è `http(s)` mostra
-     l'avviso `#fileProtocolWarning` (stile `.alert`, aggiunto al CSS);
-  2. ONNX Runtime e il modulo PaddleOCR vengono **creati solo su http(s)**: da
-     `file://` non si scaricano nemmeno, e in console resta un solo avviso chiaro;
-  3. Tesseract.js è caricato **sempre** e `initOcr()` lo prova per primo; su
-     http(s) aspetta `paddleocr-ready` (max **30 s**) e usa PaddleOCR, altrimenti
-     resta su Tesseract.js dicendolo nello stato (`✅ OCR pronto (Tesseract.js)`).
-     Il riconoscimento normalizza l'output dei due motori nella stessa forma
-     (`{text, box}`) e **deduplica i riquadri** prima del modello delle formule
-     (Tesseract restituisce una casella per ogni parola). Sistemato anche lo stato
-     che prima scriveva «⚠️ OCR pronto» (un avviso per una cosa che andava bene).
+- **Le correzioni fatte qui (18/09/2026).** Il file arrivato da DeepSeek (la pagina
+  con l'OCR) è stato corretto in **sette punti**, tutti trovati da prove vere nel
+  browser:
+  1. **`file://`**: uno script in testa legge `location.protocol` e, se non è
+     `http(s)`, mostra l'avviso `#fileProtocolWarning` (stile `.alert` aggiunto al
+     CSS) con le istruzioni per il mini-server;
+  2. **ONNX Runtime e PaddleOCR creati solo su http(s)**: da `file://` non si
+     scaricano nemmeno → niente `fetch` bloccato dal CORS e niente errore criptico;
+  3. **Tesseract.js sempre caricato** e `initOcr()` lo prova per primo; su http(s)
+     aspetta `paddleocr-ready` (max 30 s) e usa PaddleOCR, altrimenti resta su
+     Tesseract dicendolo nello stato. Il riconoscimento normalizza l'output dei due
+     motori in `{text, box}`;
+  4. **Transformers.js importato come modulo**: il tag `<script>` classico non
+     partiva («Cannot use 'import.meta' outside a module») ed è il motivo per cui le
+     **formule** restavano a zero;
+  5. **il modello delle formule si carica in background**, dopo l'OCR: prima il
+     pulsante restava bloccato per minuti aspettando un modello da centinaia di MB
+     (lo stato ora dice «⏳ modello formule in caricamento (è grosso: il testo si può
+     già estrarre)»);
+  6. **lista di modelli LaTeX-OCR** provati in ordine:
+     `Youn-Sung/latex-finetuned-onnx` (`dtype: 'fp32'`; è l'unico con
+     `encoder_model` + `decoder_model_merged` — provato: rende `f(x) = x² + 3x − 1`
+     come `f(x)=x^{2}+3x-1` in 49 s), poi `nougat-latex-base-ONNX` e
+     `latex_finetuned-ONNX`, che oggi chiedono file non pubblicati nei loro
+     repository (404);
+  7. **il ritaglio delle formule funziona con entrambi i motori**: nuova funzione
+     `casellaItem` che accetta `box`/`bbox` con `xMin,yMin,xMax,yMax`, oppure
+     `x,y,width,height`, oppure i 4 punti (`poly`/`points`), e `null` se non c'è
+     nulla. Con PaddleOCR il ciclo non partiva **mai** (cercava solo `item.box`);
+     per giunta su una foto da 12 MP poteva fare centinaia di inferenze (1-3 s
+     l'una): ora c'è un **tetto di 12 formule**, un filtro che scarta i riquadri
+     oltre 1/4 dell'immagine e lo stato mostra l'avanzamento.
+  In più: la compilazione PDF con **Siglum era rotta** (`pdfEngine.ready is not a
+  function`): l'API di `@siglum/engine@0.1.4` è `init()` e
+  `compile(source, { engine })` — la sorgente è il **primo** argomento — con
+  risultato `{success, pdf, log}` (ora si mostra anche `error` quando fallisce).
+  Sistemato anche lo stato che scriveva «⚠️ OCR pronto» per una cosa che andava bene.
 - **Verifiche del 18/09/2026 (dopo le correzioni).** I 5 blocchi `<script>` della
-  pagina si compilano (JavaScriptCore, `new Function`); in **Chrome headless**:
-  da `file://` → avviso **visibile** (`display: block`), **nessun** tag
-  `onnxruntime` nel DOM, Tesseract.js presente; da `http://localhost:8123` →
-  avviso **nascosto** (`display:none`), tag `onnxruntime` **presente**,
-  Tesseract.js presente. **Non ancora provato end-to-end** il riconoscimento su una
-  foto vera: serve un'immagine con testo e i modelli da CDN (il flusso resta quello
-  di prima, cambia solo quale motore risponde).
+  pagina si compilano (JavaScriptCore, `new Function`) e `casellaItem` è provata su
+  6 forme di casella (tutte normalizzate, `null` quando non c'è). In **Chrome
+  headless**:
+  - da `file://` → avviso **visibile** (`display: block`), **nessun** tag
+    `onnxruntime` nel DOM, Tesseract.js presente;
+  - da `http://localhost:8123` → avviso **nascosto** (`display:none`), tag
+    `onnxruntime` **presente**, Tesseract.js presente.
+  Prova end-to-end sulla pagina servita via HTTP, con la foto
+  **`IMG_9206.jpg`** (4032×3024, un quaderno di matematica, 1,9 MB) caricata
+  dall'input file:
+  - modelli della sfocatura pronti in **4 s** (freddo) e **2 s** (cache calda);
+    **OCR pronto in 69-73 s** da freddo (scarica Tesseract + PaddleOCR) e **9 s**
+    con la cache del browser; **Siglum pronto in 5-75 s**; **modello delle formule
+    in 45-51 s** in background, senza bloccare il testo;
+  - **testo riconosciuto: 44 righe** (387 caratteri). È un quaderno **scritto a
+    mano** e pieno di formule, quindi esce mangiato (`In questocaso`,
+    `f&) ha um asintoto dliquo,`): da testo **stampato** — l'uso previsto di
+    Tesseract/PaddleOCR — ci si deve aspettare molto di meglio;
+  - **LaTeX generato** (821 caratteri: `article`, `babel` italiano, `amsmath`,
+    `geometry`) e `.tex` scaricabile;
+  - **sfocatura sulla stessa foto**: «Volti rilevati: 0 · area persona ≈ 11.0% ·
+    espansione 18px» in 18 s (0 volti è atteso su persone a figura intera, come già
+    documentato);
+  - il **modello delle formule** è stato provato anche da solo, su una formula
+    disegnata in un canvas: `f(x) = x² + 3x − 1` → **`f(x)=x^{2}+3x-1`**.
+  **Resta non verificato dentro l'app** il pezzo finale delle formule (il ritaglio
+  dei riquadri e il blocco `align*` nel LaTeX): le prove sull'immagine da 12 MP
+  restano lente (OCR completo + inferenze + la compilazione Siglum che scarica i
+  pacchetti CTAN oltrepassano i minuti). I singoli pezzi sono però provati:
+  `casellaItem`, il modello che rende il LaTeX giusto, il tetto di 12 formule e
+  l'ordine di caricamento.
+  **Consiglio per le prove:** usare un profilo Chrome **persistente**
+  (`--user-data-dir=…`): il primo caricamento scarica ~400 MB di modelli e senza
+  cache ogni prova li riscarica da capo.
 
