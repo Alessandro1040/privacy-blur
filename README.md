@@ -168,6 +168,7 @@ caricamento) e la pagina in Chrome pilotato da Selenium:
 | Correzione di un testo OCR di prova (solo testo) | **4,1 s** — `unrdiscontinuita`→`un' discontinuità`, `interuallo`→`intervallo`, `e positiva`→`è positiva`, formula `\frac` intatta |
 | Trascrizione della **foto a mano** (`IMG_9206.jpg`, ridotta a 1600 px, ~642 KB) | **22,8 s** — 472 caratteri di matematica **coerente** (limiti, asintoti obliqui), contro le 44 righe senza senso dell'OCR locale |
 | Preset «📐 Trascrivi in LaTeX» sulla stessa foto | **31,6 s** (poi 37,7 s con il prompt rafforzato) — `align*`, `\lim_{x \to \infty}`, `\frac`, `\sin`, `\mathbb R` |
+| Correzione di un testo OCR di prova con la pagina aperta **con doppio clic** (`file://`, origine `null`) | **3,0 s** — funziona anche senza un server locale per la pagina: `Nell interuallo`→`Nell'intervallo`, `e positiva`→`è positiva` |
 
 Il primo tentativo di LaTeX **non compilava**: `! Missing $ inserted`, perché il
 modello metteva `x \to \infty` e un `\begin{cases}` **fuori** dalla matematica. Da
