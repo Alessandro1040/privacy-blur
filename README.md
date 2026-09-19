@@ -149,8 +149,32 @@ modello; per la scrittura a mano serve un modello **vision**
 (`qwen2.5-vl-7b-instruct`, `llama-3.2-11b-vision`, `minicpm-v`…). Nel campo «Modello»
 si scrive l'identificativo che LM Studio mostra.
 
-**Verifiche del 19/09/2026.** La sezione è stata provata con un **server finto
-OpenAI-compatibile** (Python, porta 8126, CORS) e Chrome pilotato da Selenium:
+**Verifiche del 19/09/2026 — con un modello vero.** Con LM Studio
+(`lms server start --cors`, poi `lms load qwen/qwen2.5-vl-7b`, 6,04 GB, 21 s di
+caricamento) e la pagina in Chrome pilotato da Selenium:
+
+| Prova | Esito |
+|---|---|
+| Correzione di un testo OCR di prova (solo testo) | **4,1 s** — `unrdiscontinuita`→`un' discontinuità`, `interuallo`→`intervallo`, `e positiva`→`è positiva`, formula `\frac` intatta |
+| Trascrizione della **foto a mano** (`IMG_9206.jpg`, ridotta a 1600 px, ~642 KB) | **22,8 s** — 472 caratteri di matematica **coerente** (limiti, asintoti obliqui), contro le 44 righe senza senso dell'OCR locale |
+| Preset «📐 Trascrivi in LaTeX» sulla stessa foto | **31,6 s** (poi 37,7 s con il prompt rafforzato) — `align*`, `\lim_{x \to \infty}`, `\frac`, `\sin`, `\mathbb R` |
+
+Il primo tentativo di LaTeX **non compilava**: `! Missing $ inserted`, perché il
+modello metteva `x \to \infty` e un `\begin{cases}` **fuori** dalla matematica. Da
+qui la regola aggiunta al prompt («TUTTA la matematica fra `$...$`, gli ambienti
+matematici solo dentro un ambiente matematico, il documento deve compilare con
+pdflatex»): con quella, il documento prodotto dalla foto **compila** con pdflatex
+2026 (uscita 0, PDF di 111 KB, nessun errore). Vale lo stesso motore che usa la
+pagina via Siglum.
+
+Restano da tenere d'occhio due cose: la trascrizione può avere punti incerti
+(`[illeggibile]` non sempre rispettato) e va confrontata con «Testo grezzo»; e un
+modello da 7 B ogni tanto sbaglia grammatica da solo (nel test ha scritto «un'
+discontinuità» invece di «una discontinuità»).
+
+**Verifiche con il server finto** (senza modello): la sezione è stata provata con un
+**server finto OpenAI-compatibile** (Python, porta 8126, CORS) e Chrome pilotato da
+Selenium:
 all'apertura la sezione è **spenta** e i quattro pulsanti disabilitati; accendendola
 con un testo OCR presente i tre pulsanti si abilitano; premendo «Correggi il testo»
 la pagina chiama `/v1/chat/completions` con il prompt di correzione e mostra il
@@ -160,8 +184,7 @@ richiesta. Le funzioni pure `richiestaLlm` e `testoRispostaLlm` sono provate in
 JavaScriptCore su tutti e tre i provider: OpenAI-compatibile (con e senza immagine,
 con l'intestazione `Authorization`), Anthropic (`/v1/messages`, `x-api-key`, parte
 `image`), Google (`:generateContent`, `inline_data`), più risposta vuota o malformata
-→ stringa vuota. **Non ancora provato con un LLM vero**: il mock verifica il
-percorso, non la qualità delle correzioni.
+→ stringa vuota.
 
 ## File presenti
 

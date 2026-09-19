@@ -884,7 +884,11 @@ Correggi SOLO gli errori evidenti: parole storpiate, spaziatura, punteggiatura, 
 NON riassumere, NON aggiungere contenuto, NON commentare: rispondi soltanto con il testo corretto.
 Se un pezzo non si legge scrivi [illeggibile] invece di indovinare. Tieni le formule fra $...$.`,
     latex: `Trascrivi fedelmente questo contenuto in LaTeX. Rispondi SOLO con il CORPO del documento
-(niente \\documentclass e niente preambolo): testo normale, ogni formula fra $...$ (un blocco align* se sono più righe).
+(niente \\documentclass e niente preambolo).
+Regole ferree, altrimenti il documento non compila: TUTTA la matematica va fra $...$, anche un
+simbolo solo ($x \\to \\infty$, $\\sin x$, $\\frac{1}{2}$); gli ambienti matematici (align*, cases,
+array) stanno SOLO dentro un ambiente matematico, mai in mezzo al testo; fuori dalla matematica non
+si usano comandi TeX. Il documento deve compilare con pdflatex senza errori.
 Non inventare nulla; dove non si legge scrivi [illeggibile].`,
     pulisci: `Riorganizza questi appunti in un testo scorrevole in italiano: paragrafi ordinati ed elenchi puntati
 dove servono, senza ripetizioni. Non aggiungere informazioni che non ci sono e tieni le formule fra $...$.
