@@ -1057,15 +1057,23 @@ Rispondi SOLO con il testo riorganizzato.`
     }
   }
 
-  function rifaiLatexConLlm(){
+  async function rifaiLatexConLlm(){
     if (!llmTesto){ setLlmStatus('⚠️ non c\'è ancora un testo dell\'LLM: premi prima uno dei tre pulsanti'); return; }
     const esito = costruisciLatex(llmTesto, [], 'Documento corretto con LLM', { escape: false });
     latexOutput.value = esito.documento;
     copyLatexBtn.disabled = false;
     downloadTexBtn.disabled = false;
-    setLlmStatus('✅ documento LaTeX rifatto dal testo dell\'LLM: lo trovi nella scheda ' +
-                 '«LaTeX completo» (e «Compila PDF» lo trasforma in PDF).');
-    compileToPdf(esito.documento);
+    setLlmStatus('<span class="spinner"></span> documento rifatto, lo sto compilando in PDF…');
+    // L'esito lo scrivo QUI e non solo nello stato dell'OCR: mentre la pagina
+    // finisce di caricare i modelli, quei messaggi coprono il risultato.
+    const riuscito = await compileToPdf(esito.documento);
+    setLlmStatus(riuscito
+      ? '✅ documento LaTeX rifatto <b>e PDF compilato</b>: il PDF è nella scheda «PDF compilato», ' +
+        'il sorgente .tex in «LaTeX completo».'
+      : '⚠️ documento LaTeX rifatto (scheda «LaTeX completo»), ma il PDF non è uscito. ' +
+        'Se la pagina sta ancora caricando i modelli aspetta qualche secondo e premi di nuovo ' +
+        '«↻ Rifai il documento LaTeX»; in alternativa scarica il .tex con «Scarica .tex» e ' +
+        'compilalo tu (pdflatex o Overleaf).');
   }
 
   // Il documento LaTeX da un testo e da un elenco di formule: lo usano sia l'OCR
@@ -1251,52 +1259,76 @@ ${body || '% Nessun testo riconosciuto'}
     if (!pdfEngineReady){
       setOcrStatus('⚠️ Compilatore PDF non pronto. Scarica il .tex e compilalo su Overleaf.');
       compileBtn.disabled = false;
-      return;
+      return false;
     }
 
     compileBtn.disabled = true;
-    setOcrStatus(`<span class="spinner"></span> Compilazione LaTeX → PDF (${pdfEngineType === 'stellar' ? 'StellarLatex' : 'Siglum'})…`);
+    const nomeMotore = pdfEngineType === 'stellar' ? 'StellarLatex' : 'Siglum';
 
-    try{
-      let pdfBytes = null;
-      let log = '';
+    // Due tentativi: capita (soprattutto appena aperta, mentre la pagina scarica
+    // ancora i modelli) che il compilatore non risponda e non lasci nemmeno un
+    // log — lì un secondo tentativo dopo qualche secondo basta.
+    for (let tentativo = 1; tentativo <= 2; tentativo++){
+      setOcrStatus(`<span class="spinner"></span> Compilazione LaTeX → PDF (${nomeMotore})…` +
+        (tentativo > 1 ? ' secondo tentativo' : ''));
 
-      if (pdfEngineType === 'stellar'){
-        pdfEngine.writeMemFSFile("main.tex", source);
-        pdfEngine.setEngineMainFile("main.tex");
-        const result = await pdfEngine.compileLaTeX();
-        pdfBytes = result?.pdf;
-        log = result?.log || '';
-      }else if (pdfEngineType === 'siglum'){
-        // API di @siglum/engine: compile(source, { engine }) — la sorgente è il
-        // PRIMO argomento; passando {input: source} il worker riceveva un oggetto
-        // e la compilazione non partiva
-        const result = await pdfEngine.compile(source, { engine: 'pdflatex' });
-        pdfBytes = result?.pdf;
-        log = result?.log || result?.error || '';
-      }
+      try{
+        let pdfBytes = null;
+        let log = '';
 
-      if (pdfBytes && pdfBytes.length > 0){
-        currentPdfBlob = new Blob([pdfBytes], { type: 'application/pdf' });
-        const url = URL.createObjectURL(currentPdfBlob);
-        pdfPreview.src = url;
-        downloadPdfBtn.disabled = false;
-        downloadPdfBtn2.disabled = false;
-        setOcrStatus(
-          `✅ PDF generato (${(currentPdfBlob.size / 1024).toFixed(1)} KB). ` +
-          `Vai al tab "PDF compilato" per vederlo.`
-        );
-      }else{
+        if (pdfEngineType === 'stellar'){
+          pdfEngine.writeMemFSFile("main.tex", source);
+          pdfEngine.setEngineMainFile("main.tex");
+          const result = await pdfEngine.compileLaTeX();
+          pdfBytes = result?.pdf;
+          log = result?.log || '';
+        }else if (pdfEngineType === 'siglum'){
+          // API di @siglum/engine: compile(source, { engine }) — la sorgente è il
+          // PRIMO argomento; passando {input: source} il worker riceveva un oggetto
+          // e la compilazione non partiva
+          const result = await pdfEngine.compile(source, { engine: 'pdflatex' });
+          pdfBytes = result?.pdf;
+          log = result?.log || result?.error || '';
+        }
+
+        if (pdfBytes && pdfBytes.length > 0){
+          currentPdfBlob = new Blob([pdfBytes], { type: 'application/pdf' });
+          const url = URL.createObjectURL(currentPdfBlob);
+          pdfPreview.src = url;
+          downloadPdfBtn.disabled = false;
+          downloadPdfBtn2.disabled = false;
+          setOcrStatus(
+            `✅ PDF generato (${(currentPdfBlob.size / 1024).toFixed(1)} KB). ` +
+            `Vai al tab "PDF compilato" per vederlo.`
+          );
+          return true;
+        }
+
+        if (tentativo === 1 && !log){
+          setOcrStatus('<span class="spinner"></span> il compilatore non ha risposto ' +
+            '(spesso sta ancora caricando i modelli): riprovo…');
+          await new Promise(r => setTimeout(r, 4000));
+          continue;
+        }
+
         console.error('LaTeX log:', log);
         setOcrStatus('⚠️ Compilazione fallita. Log (prime righe): ' +
           (log ? log.split('\n').slice(0,3).join(' · ') : 'nessun log'));
         compileBtn.disabled = false;
+        return false;
+      }catch(err){
+        console.error('Compile error:', err);
+        if (tentativo === 1){
+          await new Promise(r => setTimeout(r, 4000));
+          continue;
+        }
+        setOcrStatus('❌ Errore di compilazione: ' + err.message);
+        compileBtn.disabled = false;
+        return false;
       }
-    }catch(err){
-      console.error('Compile error:', err);
-      setOcrStatus('❌ Errore di compilazione: ' + err.message);
-      compileBtn.disabled = false;
     }
+    compileBtn.disabled = false;
+    return false;
   }
 
   // Pulsante manuale "Compila PDF"

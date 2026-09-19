@@ -143,6 +143,16 @@ dei modelli, `lms load qwen/qwen2.5-vl-7b` per caricare quello vision,
 `lms server start --cors` per accendere il server in modo che il browser possa
 usarlo.
 
+**Se il PDF non esce** (`Compilazione fallita ... nessun log`): è successo premendo
+«↻ Rifai il documento LaTeX» **mentre la pagina stava ancora scaricando i modelli**
+(lo stato lo dice: «⏳ modello formule in caricamento»). Il compilatore della pagina
+è un pdflatex in WebAssembly e in quel momento può fallire in silenzio, senza
+lasciare log. Da qui due rimedi: la pagina **riprova da sola una volta** e scrive
+l'esito nello stato della sezione LLM (che i messaggi di caricamento non coprono);
+e se anche il secondo tentativo fallisce, aspetta che lo stato dica che tutto è
+pronto, oppure scarica il `.tex` e compilalo tu. Il LaTeX prodotto dal modello è
+valido: gli stessi documenti compilano con pdflatex 2026 senza errori.
+
 **Un LLM locale (LM Studio è già installato):** apri LM Studio → *Developer* →
 *Start server* (ascolta su `http://localhost:1234/v1`, CORS già aperto) e carica un
 modello; per la scrittura a mano serve un modello **vision**
