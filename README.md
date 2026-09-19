@@ -123,6 +123,26 @@ non finisce mai nel file (la repo è **pubblica**). Con un URL locale il traffic
 esce dalla macchina; con un servizio online escono il testo e — se la spia è accesa —
 l'immagine ridotta: la pagina lo avverte nello stato mentre aspetta.
 
+**Se compare «Failed to fetch»** il browser non riesce proprio a parlare con il
+server. Cause, in ordine di frequenza:
+
+1. **il server locale è acceso ma senza CORS**: il flag si attiva con
+   `lms server stop && lms server start --cors` (oppure con l'interruttore
+   *Enable CORS* nella pagina *Developer*). Senza CORS l'intestazione
+   `Access-Control-Allow-Origin` non arriva e il browser blocca la chiamata — è
+   l'errore che ho preso io al primo tentativo;
+2. il server **non è acceso**: `lms server status`;
+3. **nessun modello caricato** e caricamento automatico spento: LM Studio risponde
+   *"No models loaded. Please load a model in the developer page or use the 'lms
+   load' command."* — la pagina mostra il messaggio del server;
+4. l'URL: meglio `http://127.0.0.1:1234/v1` che `localhost`, perché a volte il
+   browser prova l'IPv6 `::1` dove il server non ascolta.
+
+Da terminale, con la CLI di LM Studio (`~/.lmstudio/bin/lms`): `lms ls` per i nomi
+dei modelli, `lms load qwen/qwen2.5-vl-7b` per caricare quello vision,
+`lms server start --cors` per accendere il server in modo che il browser possa
+usarlo.
+
 **Un LLM locale (LM Studio è già installato):** apri LM Studio → *Developer* →
 *Start server* (ascolta su `http://localhost:1234/v1`, CORS già aperto) e carica un
 modello; per la scrittura a mano serve un modello **vision**

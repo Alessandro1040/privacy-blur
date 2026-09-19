@@ -1039,8 +1039,17 @@ Rispondi SOLO con il testo riorganizzato.`
         `Con <b>↻ Rifai il documento LaTeX</b> lo porti nel PDF.`);
       abilitaBottoniLlm();
     }catch(err){
-      setLlmStatus(`❌ ${escLlm(err.message)} — se il servizio è locale, controlla che sia acceso ` +
-        `(LM Studio → Developer → Start server) e che l'URL sia giusto.`);
+      const mio = /localhost|127\.0\.0\.1/.test(cfg.url);
+      setLlmStatus(`❌ ${escLlm(err.message)}. ` + (mio
+        ? 'Il server locale non si è fatto raggiungere: 1) è acceso? ' +
+          '(LM Studio → Developer → Start server, oppure <code>lms server start</code>); ' +
+          '2) è acceso <b>con CORS</b>? Senza, il browser blocca la chiamata e il messaggio è ' +
+          'proprio «Failed to fetch»: <code>lms server stop &amp;&amp; lms server start --cors</code> ' +
+          '(o l\'interruttore «Enable CORS» nella pagina Developer); ' +
+          '3) il nome del modello è esattamente quello che compare in ' +
+          '<code>/v1/models</code>? 4) nell\'URL meglio <code>127.0.0.1</code> che ' +
+          '<code>localhost</code>: a volte il browser prova l\'IPv6 ::1, dove il server non ascolta.'
+        : 'Controlla l\'URL, che la chiave sia valida e che la rete non blocchi la richiesta.'));
     }
   }
 
