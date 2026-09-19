@@ -5,7 +5,9 @@ caricato su un server, nessuna installazione, nessun account):
 
 1. **sfocare solo le persone** (sagoma intera, testa compresa) in una foto;
 2. **estrarre testo e formule** da un'immagine (OCR) e **compilare il PDF** in
-   LaTeX, con il sorgente `.tex` sempre scaricabile.
+   LaTeX, con il sorgente `.tex` sempre scaricabile;
+3. *(opzionale, spento di default)* **correggere il testo con un LLM** — locale
+   (LM Studio/Ollama) o online — e farlo trascrivere in LaTeX pulito.
 
 **Stato (18/09/2026):** la repo nasce il 18/09/2026 con la parte *sfocatura* (file
 DeepSeek `…_04c612.html`, portato qui com'era); lo stesso giorno è arrivata la
@@ -92,6 +94,54 @@ più bassa = più preciso.
    (`@siglum/engine`, ~45 MB la prima volta, può richiedere 1–2 minuti). Il PDF
    compare in un'anteprima con due pulsanti di download; il **`.tex` si scarica
    sempre** e si può compilare altrove (Overleaf).
+
+## La correzione con un LLM (opzionale — sezione 3 della pagina)
+
+L'OCR sbaglia, soprattutto sulla **scrittura a mano**: un modello linguistico può
+correggere il testo o trascriverlo in LaTeX. La sezione è **spenta di default**: se
+non la accendi tu, niente esce dal computer.
+
+| Controllo | Cosa fa |
+|---|---|
+| **Usa l'LLM** | l'interruttore. All'apertura è **sempre spento** e lo stato lo dice: «LLM spento: niente esce da questo computer» |
+| **Tipo di servizio** | `OpenAI-compatibile` (LM Studio · Ollama · OpenAI · vLLM…), `Anthropic`, `Google` |
+| **URL base** | predefinito `http://localhost:1234/v1` (LM Studio); per OpenAI `https://api.openai.com/v1` |
+| **Modello** | es. `qwen2.5-vl-7b-instruct` in LM Studio, oppure `gpt-5` / `claude-…` / `gemini-2.5-flash` online |
+| **Chiave API** | solo per i servizi online: si scrive a mano e **non viene salvata** (resta nella scheda); con un URL locale il campo si svuota da sé |
+| **manda anche l'immagine** | consigliato con la scrittura a mano: manda la foto ridotta a ~1600 px sul lato lungo (meno token). Spenta, va solo il testo dell'OCR |
+| **✍️ Correggi il testo** | corregge gli errori evidenti senza inventare (dove non si legge: `[illeggibile]`) |
+| **📐 Trascrivi in LaTeX** | riscrive il contenuto come corpo di documento LaTeX, con le formule fra `$...$` |
+| **🧹 Pulisci e riorganizza** | riorganizza gli appunti in paragrafi ed elenchi, senza aggiungere nulla |
+| **↻ Rifai il documento LaTeX** | prende il testo dell'LLM e rigenera il `.tex` (e lo compila). Il testo dell'LLM **non** viene «protetto» come quello dell'OCR (è già LaTeX): così la matematica `$...$` resta viva |
+
+Il risultato finisce in una scheda a parte, **«Testo corretto (LLM)»**: l'originale
+dell'OCR resta in «Testo grezzo», così si vede sempre cosa è cambiato.
+
+**Privacy.** Le impostazioni non segrete (servizio, URL, modello, «manda l'immagine»)
+si ricordano in `localStorage`; la **chiave API no**: si riscrive a ogni sessione e
+non finisce mai nel file (la repo è **pubblica**). Con un URL locale il traffico non
+esce dalla macchina; con un servizio online escono il testo e — se la spia è accesa —
+l'immagine ridotta: la pagina lo avverte nello stato mentre aspetta.
+
+**Un LLM locale (LM Studio è già installato):** apri LM Studio → *Developer* →
+*Start server* (ascolta su `http://localhost:1234/v1`, CORS già aperto) e carica un
+modello; per la scrittura a mano serve un modello **vision**
+(`qwen2.5-vl-7b-instruct`, `llama-3.2-11b-vision`, `minicpm-v`…). Nel campo «Modello»
+si scrive l'identificativo che LM Studio mostra.
+
+**Verifiche del 19/09/2026.** La sezione è stata provata con un **server finto
+OpenAI-compatibile** (Python, porta 8126, CORS) e Chrome pilotato da Selenium:
+all'apertura la sezione è **spenta** e i quattro pulsanti disabilitati; accendendola
+con un testo OCR presente i tre pulsanti si abilitano; premendo «Correggi il testo»
+la pagina chiama `/v1/chat/completions` con il prompt di correzione e mostra il
+testo tornato (badge «3 righe»); «↻ Rifai il documento LaTeX» rigenera il `.tex`
+**mantenendo la matematica** (`$y = 3x - 1$`); a spia spenta non parte nessuna
+richiesta. Le funzioni pure `richiestaLlm` e `testoRispostaLlm` sono provate in
+JavaScriptCore su tutti e tre i provider: OpenAI-compatibile (con e senza immagine,
+con l'intestazione `Authorization`), Anthropic (`/v1/messages`, `x-api-key`, parte
+`image`), Google (`:generateContent`, `inline_data`), più risposta vuota o malformata
+→ stringa vuota. **Non ancora provato con un LLM vero**: il mock verifica il
+percorso, non la qualità delle correzioni.
 
 ## File presenti
 

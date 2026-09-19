@@ -90,6 +90,17 @@
   }
   .alert code{background:#1a0e06;padding:2px 6px;border-radius:4px;font-family:ui-monospace,monospace;color:#fdba74}
   .alert strong{color:#fdba74}
+  /* Campi della sezione LLM */
+  .llm-input{
+    background:#0d1017;color:#d4e0f0;border:1px solid #2a3140;border-radius:8px;
+    font-family:ui-monospace,'Cascadia Code',monospace;font-size:.82rem;
+    padding:8px 10px;flex:1 1 200px;min-width:180px;
+  }
+  .llm-input:focus{outline:none;border-color:var(--accent)}
+  .llm-select{
+    background:#1c212b;color:var(--text);border:1px solid #2a3140;border-radius:8px;
+    padding:8px 10px;font-size:.82rem;
+  }
 </style>
 </head>
 <body>
@@ -166,6 +177,7 @@
     <button class="tab active" data-tab="latex">LaTeX completo</button>
     <button class="tab" data-tab="text">Testo grezzo <span class="badge" id="textCount">0 righe</span></button>
     <button class="tab" data-tab="formulas">Formule <span class="badge" id="formulaCount">0</span></button>
+    <button class="tab" data-tab="llm">Testo corretto (LLM) <span class="badge" id="llmBadge">—</span></button>
     <button class="tab" data-tab="pdf">PDF compilato</button>
   </div>
 
@@ -183,6 +195,58 @@
     <div class="pdf-actions">
       <button class="btn secondary" id="downloadPdfBtn2" disabled>Scarica PDF</button>
     </div>
+  </div>
+  <div class="tab-content" id="tab-llm">
+    <textarea id="llmOutput" placeholder="Qui compare il testo corretto o riorganizzato dall'LLM (l'originale dell'OCR resta nella scheda «Testo grezzo»)…" readonly></textarea>
+  </div>
+</div>
+
+<!-- ========== SEZIONE 3: CORREZIONE CON LLM (opzionale) ========== -->
+<div class="card">
+  <h2 style="margin:0 0 14px;font-size:1.1rem">3. Correzione con un LLM (opzionale)</h2>
+  <p style="color:var(--muted);font-size:.9rem;margin:0 0 14px;line-height:1.55">
+    L'OCR sbaglia — soprattutto sulla <strong>scrittura a mano</strong> — e un modello
+    linguistico può correggere il testo e trascriverlo in LaTeX pulito.
+    <strong>Spento di default</strong>: se non lo accendi tu, niente esce da questo
+    computer. Con un server <strong>locale</strong> (LM Studio è già installato) non
+    esce nemmeno quando è acceso.
+  </p>
+
+  <div class="row" style="margin-top:0">
+    <label class="slider" style="gap:6px;color:var(--text)">
+      <input type="checkbox" id="llmOn"> <strong>Usa l'LLM</strong>
+    </label>
+    <select id="llmApi" class="llm-select">
+      <option value="openai" selected>OpenAI-compatibile (LM Studio · Ollama · OpenAI…)</option>
+      <option value="anthropic">Anthropic (Claude)</option>
+      <option value="google">Google (Gemini)</option>
+    </select>
+    <input type="text" id="llmUrl" class="llm-input" value="http://localhost:1234/v1" placeholder="URL base del servizio">
+    <input type="text" id="llmModel" class="llm-input" placeholder="modello (es. qwen2.5-vl-7b-instruct)">
+  </div>
+
+  <div class="row">
+    <input type="password" id="llmKey" class="llm-input" placeholder="chiave API (solo per i servizi online: resta in questa scheda, non viene salvata)">
+    <label class="slider" style="gap:6px;color:var(--text)">
+      <input type="checkbox" id="llmVision"> manda anche l'<strong>immagine</strong> (consigliato a mano)
+    </label>
+  </div>
+
+  <div class="row">
+    <button class="btn green" id="llmFixBtn" disabled>✍️ Correggi il testo</button>
+    <button class="btn secondary" id="llmLatexBtn" disabled>📐 Trascrivi in LaTeX</button>
+    <button class="btn secondary" id="llmCleanBtn" disabled>🧹 Pulisci e riorganizza</button>
+    <button class="btn secondary" id="llmRebuildBtn" disabled>↻ Rifai il documento LaTeX</button>
+  </div>
+
+  <div class="status" id="llmStatus"></div>
+  <div class="hint">
+    🖥️ <b>Locale</b>: apri LM Studio → <i>Developer</i> → <i>Start server</i> e carica un
+    modello (per la scrittura a mano serve un modello <b>vision</b>, es.
+    <code>qwen2.5-vl-7b-instruct</code> o <code>llama-3.2-11b-vision</code>); l'URL è
+    <code>http://localhost:1234/v1</code> e la chiave non serve.
+    ☁️ <b>Online</b>: incolla l'URL e la chiave del servizio — la chiave resta in questa
+    scheda del browser e <b>non</b> viene mai salvata nel file (la repo è pubblica).
   </div>
 </div>
 
@@ -289,6 +353,21 @@
   const formulaCount  = $('formulaCount');
   const pdfPreview    = $('pdfPreview');
 
+  // Sezione LLM (opzionale)
+  const llmOn         = $('llmOn');
+  const llmApi        = $('llmApi');
+  const llmUrl        = $('llmUrl');
+  const llmModel      = $('llmModel');
+  const llmKey        = $('llmKey');
+  const llmVision     = $('llmVision');
+  const llmStatus     = $('llmStatus');
+  const llmOutput     = $('llmOutput');
+  const llmBadge      = $('llmBadge');
+  const llmFixBtn     = $('llmFixBtn');
+  const llmLatexBtn   = $('llmLatexBtn');
+  const llmCleanBtn   = $('llmCleanBtn');
+  const llmRebuildBtn = $('llmRebuildBtn');
+
   expandInput.addEventListener('input', () => {
     expandVal.textContent = expandInput.value + 'px';
   });
@@ -316,6 +395,7 @@
   let ocrReady = false;
   let ocrSource = '';            // da dove arriva il testo riconosciuto (per lo stato)
   let formuleInCorso = false;    // il modello delle formule si scarica in background
+  let llmTesto = '';             // ultimo testo corretto/riorganizzato dall'LLM
 
   let pdfEngine = null;
   let pdfEngineReady = false;
@@ -602,6 +682,11 @@
     formulasOutput.value = '';
     textCount.textContent = '0 righe';
     formulaCount.textContent = '0';
+    llmTesto = '';
+    llmOutput.value = '';
+    llmBadge.textContent = '—';
+    setLlmStatus('');
+    abilitaBottoniLlm();
     pdfPreview.src = 'about:blank';
     currentPdfBlob = null;
     setStatus('Pronto per una nuova immagine.');
@@ -786,6 +871,246 @@
   }
 
   // ============================================================
+  // CORREZIONE CON UN LLM (opzionale, spento di default)
+  // ============================================================
+  // L'OCR sbaglia — soprattutto sulla scrittura a mano — e un modello linguistico
+  // può correggere il testo o trascriverlo in LaTeX. Con un server LOCALE
+  // (LM Studio/Ollama) niente esce dal computer; con un servizio online la foto o
+  // il testo escono, quindi l'interruttore è spento di default e la chiave si
+  // scrive qui a mano (mai nel file: la repo è pubblica).
+  const LLM_PROMPT = {
+    correggi: `Sei un correttore di bozze. Ti do il testo riconosciuto da un OCR, che contiene errori.
+Correggi SOLO gli errori evidenti: parole storpiate, spaziatura, punteggiatura, righe unite o spezzate a metà.
+NON riassumere, NON aggiungere contenuto, NON commentare: rispondi soltanto con il testo corretto.
+Se un pezzo non si legge scrivi [illeggibile] invece di indovinare. Tieni le formule fra $...$.`,
+    latex: `Trascrivi fedelmente questo contenuto in LaTeX. Rispondi SOLO con il CORPO del documento
+(niente \\documentclass e niente preambolo): testo normale, ogni formula fra $...$ (un blocco align* se sono più righe).
+Non inventare nulla; dove non si legge scrivi [illeggibile].`,
+    pulisci: `Riorganizza questi appunti in un testo scorrevole in italiano: paragrafi ordinati ed elenchi puntati
+dove servono, senza ripetizioni. Non aggiungere informazioni che non ci sono e tieni le formule fra $...$.
+Rispondi SOLO con il testo riorganizzato.`
+  };
+
+  // ── funzioni PURE (si provano con JavaScriptCore, senza rete) ──────────────
+
+  // La richiesta per il provider scelto. `immagine` è una data URL (o stringa vuota).
+  function richiestaLlm(cfg, prompt, immagine){
+    const base = String(cfg.url || '').replace(/\/+$/, '');
+    const dati = /^data:([^;]+);base64,(.*)$/.exec(immagine || '');
+    const mime = dati ? dati[1] : 'image/png';
+    const base64 = dati ? dati[2] : '';
+    if (cfg.api === 'anthropic'){
+      const contenuto = [{ type: 'text', text: prompt }];
+      if (base64) contenuto.push({ type: 'image', source: { type: 'base64', media_type: mime, data: base64 } });
+      return {
+        url: base + '/v1/messages',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.chiave || '',
+                   'anthropic-version': '2023-06-01' },
+        corpo: { model: cfg.modello, max_tokens: 4096, temperature: 0,
+                 messages: [{ role: 'user', content: contenuto }] }
+      };
+    }
+    if (cfg.api === 'google'){
+      const parti = [{ text: prompt }];
+      if (base64) parti.push({ inline_data: { mime_type: mime, data: base64 } });
+      return {
+        url: base + '/v1beta/models/' + encodeURIComponent(cfg.modello || '') +
+             ':generateContent?key=' + encodeURIComponent(cfg.chiave || ''),
+        headers: { 'Content-Type': 'application/json' },
+        corpo: { contents: [{ parts: parti }], generationConfig: { temperature: 0 } }
+      };
+    }
+    // OpenAI-compatibile: LM Studio, Ollama, OpenAI, vLLM, LocalAI…
+    const contenuto = [{ type: 'text', text: prompt }];
+    if (immagine) contenuto.push({ type: 'image_url', image_url: { url: immagine } });
+    const headers = { 'Content-Type': 'application/json' };
+    if (cfg.chiave) headers['Authorization'] = 'Bearer ' + cfg.chiave;
+    return {
+      url: base + '/chat/completions', headers,
+      corpo: { model: cfg.modello, temperature: 0, messages: [{ role: 'user', content: contenuto }] }
+    };
+  }
+
+  // Il testo dentro la risposta: i tre provider rispondono in formati diversi.
+  function testoRispostaLlm(api, risposta){
+    try{
+      if (api === 'anthropic'){
+        return (risposta.content || []).filter(p => p.type === 'text')
+                                      .map(p => p.text || '').join('\n').trim();
+      }
+      if (api === 'google'){
+        const c = (risposta.candidates || [])[0] || {};
+        const parti = (c.content && c.content.parts) || [];
+        return parti.map(p => p.text || '').join('').trim();
+      }
+      const scelta = (risposta.choices || [])[0] || {};
+      const msg = scelta.message || {};
+      if (typeof msg.content === 'string') return msg.content.trim();
+      if (Array.isArray(msg.content)) return msg.content.map(p => p.text || '').join('').trim();
+      return (scelta.text || '').trim();
+    }catch(_){ return ''; }
+  }
+
+  // ── impostazioni, runner e collegamento all'interfaccia ───────────────────
+
+  // Le impostazioni non segrete si ricordano tra una sessione e l'altra; la CHIAVE
+  // API invece no: si riscrive ogni volta (così non finisce sul disco, e la repo
+  // pubblica resta pulita).
+  const LLM_IMPOSTAZIONI = 'privacyBlur.llm';
+
+  function escLlm(s){
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function setLlmStatus(html){ llmStatus.innerHTML = html; }
+
+  function salvaImpostazioniLlm(){
+    try{
+      localStorage.setItem(LLM_IMPOSTAZIONI, JSON.stringify({
+        api: llmApi.value, url: llmUrl.value.trim(),
+        modello: llmModel.value.trim(), vision: llmVision.checked
+      }));
+    }catch(_){}
+  }
+  function caricaImpostazioniLlm(){
+    try{
+      const c = JSON.parse(localStorage.getItem(LLM_IMPOSTAZIONI) || '{}');
+      if (c.api) llmApi.value = c.api;
+      if (c.url) llmUrl.value = c.url;
+      if (c.modello) llmModel.value = c.modello;
+      llmVision.checked = !!c.vision;
+    }catch(_){}
+    llmOn.checked = false;   // all'apertura è SEMPRE spento: accenderlo è una scelta
+  }
+  function impostaLlmCorrente(){
+    return { attivo: llmOn.checked, api: llmApi.value, url: llmUrl.value.trim(),
+             modello: llmModel.value.trim(), chiave: llmKey.value.trim(),
+             vision: llmVision.checked };
+  }
+  function abilitaBottoniLlm(){
+    const ok = llmOn.checked && !!textOutput.value.trim();
+    [llmFixBtn, llmLatexBtn, llmCleanBtn].forEach(b => { if (b) b.disabled = !ok; });
+    if (llmRebuildBtn) llmRebuildBtn.disabled = !(ok && llmTesto);
+  }
+
+  // L'immagine ridotta: per una foto da 4000 px bastano ~1600 px sul lato lungo
+  // (meno token, stessa leggibilità per il modello)
+  function immagineRidotta(lato){
+    if (!currentImg) return '';
+    const l = lato || 1600;
+    const scala = Math.min(1, l / Math.max(currentImg.naturalWidth, currentImg.naturalHeight));
+    const w = Math.max(1, Math.round(currentImg.naturalWidth * scala));
+    const h = Math.max(1, Math.round(currentImg.naturalHeight * scala));
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    c.getContext('2d').drawImage(currentImg, 0, 0, w, h);
+    return c.toDataURL('image/jpeg', 0.9);
+  }
+
+  async function correggiConLlm(modo){
+    const cfg = impostaLlmCorrente();
+    if (!cfg.attivo){ setLlmStatus('⚠️ accendi prima «Usa l\'LLM»: se resta spento non esce niente da questo computer.'); return; }
+    if (!cfg.url){ setLlmStatus('⚠️ manca l\'URL del servizio'); return; }
+    if (!cfg.modello){ setLlmStatus('⚠️ manca il nome del modello (in LM Studio lo leggi nel pannello in alto)'); return; }
+    const testo = textOutput.value.trim();
+    if (!testo){ setLlmStatus('⚠️ prima fai l\'OCR: non c\'è testo da correggere'); return; }
+    const immagine = cfg.vision ? immagineRidotta() : '';
+    const richiesta = richiestaLlm(cfg, LLM_PROMPT[modo] + '\n\n--- TESTO OCR ---\n' + testo, immagine);
+    const locale = /localhost|127\.0\.0\.1/.test(cfg.url);
+    setLlmStatus(`<span class="spinner"></span> aspetto il modello (${escLlm(cfg.modello)})… ` +
+      (locale ? 'tutto in locale' :
+       '⚠️ il testo' + (immagine ? ' e la foto' : '') + ' stanno uscendo da questo computer'));
+    try{
+      const r = await fetch(richiesta.url, {
+        method: 'POST', headers: richiesta.headers, body: JSON.stringify(richiesta.corpo)
+      });
+      if (!r.ok){
+        const dettaglio = (await r.text()).slice(0, 300);
+        setLlmStatus(`❌ il servizio ha risposto ${r.status}. ${escLlm(dettaglio)}`);
+        return;
+      }
+      const corretto = testoRispostaLlm(cfg.api, await r.json());
+      if (!corretto){ setLlmStatus('❌ risposta vuota o in un formato inatteso (controlla il nome del modello)'); return; }
+      llmTesto = corretto;
+      llmOutput.value = corretto;
+      llmBadge.textContent = corretto.split('\n').filter(l => l.trim()).length + ' righe';
+      setLlmStatus(`✅ fatto (${corretto.length} caratteri). È nella scheda «Testo corretto (LLM)»: ` +
+        `l'originale dell'OCR resta in «Testo grezzo», così vedi cosa è cambiato. ` +
+        `Con <b>↻ Rifai il documento LaTeX</b> lo porti nel PDF.`);
+      abilitaBottoniLlm();
+    }catch(err){
+      setLlmStatus(`❌ ${escLlm(err.message)} — se il servizio è locale, controlla che sia acceso ` +
+        `(LM Studio → Developer → Start server) e che l'URL sia giusto.`);
+    }
+  }
+
+  function rifaiLatexConLlm(){
+    if (!llmTesto){ setLlmStatus('⚠️ non c\'è ancora un testo dell\'LLM: premi prima uno dei tre pulsanti'); return; }
+    const esito = costruisciLatex(llmTesto, [], 'Documento corretto con LLM', { escape: false });
+    latexOutput.value = esito.documento;
+    copyLatexBtn.disabled = false;
+    downloadTexBtn.disabled = false;
+    setLlmStatus('✅ documento LaTeX rifatto dal testo dell\'LLM: lo trovi nella scheda ' +
+                 '«LaTeX completo» (e «Compila PDF» lo trasforma in PDF).');
+    compileToPdf(esito.documento);
+  }
+
+  // Il documento LaTeX da un testo e da un elenco di formule: lo usano sia l'OCR
+  // sia la ricostruzione dal testo corretto. Con `escape:false` il testo NON viene
+  // protetto: serve per l'output dell'LLM, che è già LaTeX (contiene $...$).
+  function costruisciLatex(testo, formule, titolo, opzioni){
+    const proteggi = s => s
+      .replace(/\\/g, '\\textbackslash{}')
+      .replace(/[&%$#_{}]/g, m => '\\' + m)
+      .replace(/\^/g, '\\textasciicircum{}')
+      .replace(/~/g, '\\textasciitilde{}')
+      .replace(/</g, '\\textless{}')
+      .replace(/>/g, '\\textgreater{}');
+    const esc = (opzioni && opzioni.escape === false) ? (s => s) : proteggi;
+    const righe = String(testo || '').split('\n').map(l => l.trim()).filter(Boolean);
+    let body = righe.map(l => esc(l) + '\n\n').join('');
+    if (formule && formule.length){
+      body += '\\begin{align*}\n' + formule.map(f => f + ' \\\\').join('\n') + '\n\\end{align*}\n';
+    }
+    const documento = `\\documentclass[11pt,a4paper]{article}
+\\usepackage[utf8]{inputenc}
+\\usepackage[T1]{fontenc}
+\\usepackage[italian]{babel}
+\\usepackage{amsmath,amssymb,amsfonts}
+\\usepackage{graphicx}
+\\usepackage{booktabs}
+\\usepackage{hyperref}
+\\usepackage[margin=2.5cm]{geometry}
+
+\\title{${esc(titolo || 'Documento estratto via OCR')}}
+\\date{\\today}
+
+\\begin{document}
+\\maketitle
+
+${body || '% Nessun testo riconosciuto'}
+
+\\end{document}`;
+    return { documento, righe };
+  }
+
+  // ── interfaccia della sezione LLM ──────────────────────────────────────────
+  [llmOn, llmVision].forEach(c => c && c.addEventListener('change', () => {
+    salvaImpostazioniLlm();
+    abilitaBottoniLlm();
+    if (!llmOn.checked) setLlmStatus('LLM spento: niente esce da questo computer.');
+  }));
+  [llmApi, llmUrl, llmModel].forEach(c => c && c.addEventListener('change', () => {
+    if (/localhost|127\.0\.0\.1/.test(llmUrl.value)) llmKey.value = '';
+    salvaImpostazioniLlm();
+  }));
+  llmFixBtn.addEventListener('click', () => correggiConLlm('correggi'));
+  llmLatexBtn.addEventListener('click', () => correggiConLlm('latex'));
+  llmCleanBtn.addEventListener('click', () => correggiConLlm('pulisci'));
+  llmRebuildBtn.addEventListener('click', rifaiLatexConLlm);
+  caricaImpostazioniLlm();
+
+  // ============================================================
   // OCR → LaTeX
   // ============================================================
   ocrBtn.addEventListener('click', async () => {
@@ -871,47 +1196,10 @@
         }
       }
 
-      // --- Costruisci documento LaTeX ---
-      const escapeLatex = s => s
-        .replace(/\\/g, '\\textbackslash{}')
-        .replace(/[&%$#_{}]/g, m => '\\' + m)
-        .replace(/\^/g, '\\textasciicircum{}')
-        .replace(/~/g, '\\textasciitilde{}')
-        .replace(/</g, '\\textless{}')
-        .replace(/>/g, '\\textgreater{}');
-
-      const textLines = fullText.split('\n').map(l => l.trim()).filter(Boolean);
-
-      let body = '';
-      for (const line of textLines){
-        body += escapeLatex(line) + '\n\n';
-      }
-      if (formulas.length){
-        body += '\\begin{align*}\n';
-        body += formulas.map(f => f + ' \\\\').join('\n');
-        body += '\n\\end{align*}\n';
-      }
-
-      const latexDoc =
-`\\documentclass[11pt,a4paper]{article}
-\\usepackage[utf8]{inputenc}
-\\usepackage[T1]{fontenc}
-\\usepackage[italian]{babel}
-\\usepackage{amsmath,amssymb,amsfonts}
-\\usepackage{graphicx}
-\\usepackage{booktabs}
-\\usepackage{hyperref}
-\\usepackage[margin=2.5cm]{geometry}
-
-\\title{Documento estratto via OCR}
-\\date{\\today}
-
-\\begin{document}
-\\maketitle
-
-${body || '% Nessun testo riconosciuto'}
-
-\\end{document}`;
+      // --- Costruisci documento LaTeX (funzione condivisa con la parte LLM) ---
+      const esitoLatex = costruisciLatex(fullText, formulas, 'Documento estratto via OCR');
+      const textLines = esitoLatex.righe;
+      const latexDoc = esitoLatex.documento;
 
       latexOutput.value = latexDoc;
       textOutput.value = fullText || '(nessun testo)';
@@ -919,6 +1207,11 @@ ${body || '% Nessun testo riconosciuto'}
 
       textCount.textContent = `${textLines.length} righe`;
       formulaCount.textContent = formulas.length;
+      // nuovo OCR → il testo dell'LLM di prima non vale più
+      llmTesto = '';
+      llmOutput.value = '';
+      llmBadge.textContent = '—';
+      abilitaBottoniLlm();
 
       setOcrStatus(
         `✅ OCR completato. <strong>${textLines.length}</strong> righe di testo, ` +
